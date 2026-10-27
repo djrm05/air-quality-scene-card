@@ -708,8 +708,13 @@ class AirQualitySceneCard extends HTMLElement {
     const metric = this._metric();
     scene.setAttribute("aria-label", this._t("aria.scene"));
 
+    // A name equal to the built-in default title (saved literally in the config
+    // when the card was created) is shown in the current language.
+    const cfgName = Object.values(I18N).some((d) => d["stub.name"] === this._config.name)
+      ? this._t("stub.name")
+      : this._config.name;
     const name =
-      this._config.name ||
+      cfgName ||
       state?.attributes?.friendly_name?.replace(metric.nameSuffix, "") ||
       this._config.entity;
     root.querySelector(".name").textContent = name;
