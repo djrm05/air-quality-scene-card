@@ -26,6 +26,9 @@
  * the same device and shown as chips, or can be set explicitly. The `chips`
  * option chooses between "auto" (all discovered readings) and "minimal"
  * (temperature, humidity and one complementary pollutant), or an explicit list.
+ *
+ * Language: all text follows the Home Assistant UI language (English and
+ * Spanish built in, English fallback). Force one with `language: es`.
  */
 
 const PM25_CATEGORIES = [
@@ -183,10 +186,227 @@ const READING_LABELS = {
   nox: "NOx index",
 };
 
-const CARD_VERSION = "1.3.1";
+/* ------------------------------------------------------------------ */
+/* Translations                                                         */
+/* ------------------------------------------------------------------ */
+// To add a language: copy the `en` block, translate the values (keep the
+// {placeholders}) and register it as I18N.<code>. The card follows the Home
+// Assistant UI language and falls back to English for any missing key; it can
+// also be forced with `language: <code>` in the card config.
 
-const fmt = (v, digits = 1) =>
-  v == null || Number.isNaN(v) ? "–" : Number(v).toFixed(digits).replace(/\.0$/, "");
+const catKeys = (metric, labels) =>
+  Object.fromEntries(Object.entries(labels).map(([k, v]) => [`cat.${metric}.${k}`, v]));
+
+const EPA_EN = {
+  good: "Good", moderate: "Moderate", usg: "Unhealthy for Sensitive Groups",
+  unhealthy: "Unhealthy", very_unhealthy: "Very Unhealthy", hazardous: "Hazardous",
+};
+const EPA_ES = {
+  good: "Buena", moderate: "Moderada", usg: "Dañina para grupos sensibles",
+  unhealthy: "Dañina", very_unhealthy: "Muy dañina", hazardous: "Peligrosa",
+};
+
+const I18N = {
+  en: {
+    "lang.name": "English",
+    "lang.auto": "Automatic (Home Assistant language)",
+    offline: "Offline",
+    "stub.name": "Air Quality",
+    "aria.scene": "Show air quality details",
+    "aria.sheet": "{name} air quality details",
+    "aria.close": "Close",
+    "card.description":
+      "Animated air-quality card for PM2.5, CO₂, PM10, VOC or NOx, with auto-discovered chips and tap-to-expand charts and history.",
+    ...catKeys("pm25", EPA_EN),
+    ...catKeys("pm10", EPA_EN),
+    ...catKeys("co2", {
+      good: "Fresh", moderate: "Acceptable", usg: "Getting Stuffy",
+      unhealthy: "Stuffy — Ventilate", very_unhealthy: "Poor", hazardous: "Extreme",
+    }),
+    ...catKeys("voc", {
+      good: "Clean", moderate: "Normal", usg: "Elevated", unhealthy: "High", very_unhealthy: "Very High",
+    }),
+    ...catKeys("nox", { good: "Baseline", moderate: "Moderate", usg: "Elevated", unhealthy: "High" }),
+    "reading.temperature": "Temperature",
+    "reading.humidity": "Humidity",
+    "reading.co2": "CO₂",
+    "reading.pm25": "PM2.5",
+    "reading.pm1": "PM1",
+    "reading.pm10": "PM10",
+    "reading.pm03": "PM0.3",
+    "reading.voc": "VOC index",
+    "reading.nox": "NOx index",
+    "attr.pm25":
+      "Categories follow the US EPA PM2.5 breakpoints (May 2024). History recorded by Home Assistant's long-term statistics.",
+    "attr.co2":
+      "Categories based on common indoor-ventilation guidance (fresh outdoor air ≈ 420 ppm; 5000 ppm is the OSHA 8-hour limit). History recorded by Home Assistant's long-term statistics.",
+    "attr.pm10":
+      "Categories follow the US EPA PM10 AQI breakpoints (24-hour). History recorded by Home Assistant's long-term statistics.",
+    "attr.voc":
+      "Sensirion VOC Index: 100 is the sensor's recent running-average baseline; higher means more volatile organic compounds than usual for this room. History recorded by Home Assistant's long-term statistics.",
+    "attr.nox":
+      "Sensirion NOx Index: 1 is the clean-air baseline; it rises during nitrogen-oxide events such as cooking or combustion. History recorded by Home Assistant's long-term statistics.",
+    "tile.last24": "Last 24 h",
+    "tile.last12": "Last 12 h",
+    "tile.average": "average {metric}",
+    "tile.pending": "Collecting data — check back soon",
+    "tile.peak": "Peak — last 24 h",
+    "tile.peakSub": "Highest reading · {category}",
+    "tile.above": "Above {limit}",
+    "tile.aboveSub": "Time above the {range} range in the last 24 h",
+    "tile.co2AboveSub": "Time past the ventilate line in the last 24 h",
+    "tile.whoTitle": "WHO annual guideline",
+    "tile.who": "{ratio}× the WHO annual guideline",
+    "tile.whoSub": "{days}-day average · guideline {guideline} µg/m³",
+    "tile.cig": "Cigarettes smoked",
+    "tile.cigSub.one": "Equivalent pollution over the last {n} day",
+    "tile.cigSub.other": "Equivalent pollution over the last {n} days",
+    "chart.title24": "{metric} — last 24 hours",
+    "chart.title10": "{metric} — last 10 days by hour",
+    "chart.every": "Every reading — last 24 hours",
+    "chart.noHistory": "No history yet — the chart fills in as Home Assistant records data.",
+    "chart.noHourly": "No hourly statistics yet — this view builds up over the next days.",
+    "chart.noData": "no data",
+    "day.today": "Today",
+    "day.yesterday": "Yesterday",
+    "ed.metric": "Primary reading",
+    "ed.entity": "Sensor",
+    "ed.name": "Name (optional)",
+    "ed.chipsMode": "Secondary chips",
+    "ed.chipsItems": "Readings to show",
+    "ed.language": "Language",
+    "ed.readingSensor": "{reading} sensor (auto-detected)",
+    "ed.metric.pm25": "PM2.5 — US EPA categories",
+    "ed.metric.co2": "CO₂ — ventilation categories",
+    "ed.metric.pm10": "PM10 — US EPA categories",
+    "ed.metric.voc": "VOC index — Sensirion scale",
+    "ed.metric.nox": "NOx index — Sensirion scale",
+    "ed.chips.auto": "All readings on the device",
+    "ed.chips.minimal": "Minimal — temperature, humidity & one pollutant",
+    "ed.chips.custom": "Customise — pick readings & assign sensors",
+  },
+  es: {
+    "lang.name": "Español",
+    "lang.auto": "Automático (idioma de Home Assistant)",
+    offline: "Sin conexión",
+    "stub.name": "Calidad del aire",
+    "aria.scene": "Mostrar detalles de la calidad del aire",
+    "aria.sheet": "Detalles de la calidad del aire de {name}",
+    "aria.close": "Cerrar",
+    "card.description":
+      "Tarjeta animada de calidad del aire para PM2.5, CO₂, PM10, VOC o NOx, con chips autodetectados y, al tocarla, gráficos e historial.",
+    ...catKeys("pm25", EPA_ES),
+    ...catKeys("pm10", EPA_ES),
+    ...catKeys("co2", {
+      good: "Aire fresco", moderate: "Aceptable", usg: "Empieza a cargarse",
+      unhealthy: "Cargado — ventila", very_unhealthy: "Mala", hazardous: "Extrema",
+    }),
+    ...catKeys("voc", {
+      good: "Limpio", moderate: "Normal", usg: "Elevado", unhealthy: "Alto", very_unhealthy: "Muy alto",
+    }),
+    ...catKeys("nox", { good: "Base", moderate: "Moderado", usg: "Elevado", unhealthy: "Alto" }),
+    "reading.temperature": "Temperatura",
+    "reading.humidity": "Humedad",
+    "reading.co2": "CO₂",
+    "reading.pm25": "PM2.5",
+    "reading.pm1": "PM1",
+    "reading.pm10": "PM10",
+    "reading.pm03": "PM0.3",
+    "reading.voc": "Índice VOC",
+    "reading.nox": "Índice NOx",
+    "attr.pm25":
+      "Las categorías siguen los umbrales de la EPA de EE. UU. para PM2.5 (mayo de 2024). Historial registrado por las estadísticas a largo plazo de Home Assistant.",
+    "attr.co2":
+      "Categorías basadas en las pautas habituales de ventilación de interiores (el aire exterior fresco ronda las 420 ppm; 5000 ppm es el límite de 8 horas de la OSHA). Historial registrado por las estadísticas a largo plazo de Home Assistant.",
+    "attr.pm10":
+      "Las categorías siguen los umbrales del AQI de PM10 de la EPA de EE. UU. (promedio de 24 horas). Historial registrado por las estadísticas a largo plazo de Home Assistant.",
+    "attr.voc":
+      "Índice VOC de Sensirion: 100 es la línea base, es decir, el promedio reciente del sensor; un valor mayor indica más compuestos orgánicos volátiles de lo habitual en esta estancia. Historial registrado por las estadísticas a largo plazo de Home Assistant.",
+    "attr.nox":
+      "Índice NOx de Sensirion: 1 es la línea base de aire limpio; sube durante episodios de óxidos de nitrógeno, como al cocinar o en combustiones. Historial registrado por las estadísticas a largo plazo de Home Assistant.",
+    "tile.last24": "Últimas 24 h",
+    "tile.last12": "Últimas 12 h",
+    "tile.average": "media de {metric}",
+    "tile.pending": "Recopilando datos: vuelve a mirar en un rato",
+    "tile.peak": "Pico — últimas 24 h",
+    "tile.peakSub": "Lectura más alta · {category}",
+    "tile.above": "Por encima de {limit}",
+    "tile.aboveSub": "Tiempo por encima del rango «{range}» en las últimas 24 h",
+    "tile.co2AboveSub": "Tiempo por encima del umbral de ventilación en las últimas 24 h",
+    "tile.whoTitle": "Guía anual de la OMS",
+    "tile.who": "{ratio}× la guía anual de la OMS",
+    "tile.whoSub": "Media de {days} días · guía {guideline} µg/m³",
+    "tile.cig": "Cigarrillos fumados",
+    "tile.cigSub.one": "Contaminación equivalente del último día",
+    "tile.cigSub.other": "Contaminación equivalente de los últimos {n} días",
+    "chart.title24": "{metric} — últimas 24 horas",
+    "chart.title10": "{metric} — últimos 10 días por hora",
+    "chart.every": "Todas las lecturas — últimas 24 horas",
+    "chart.noHistory": "Aún no hay historial: el gráfico se irá llenando a medida que Home Assistant registre datos.",
+    "chart.noHourly": "Aún no hay estadísticas por hora: esta vista se irá completando en los próximos días.",
+    "chart.noData": "sin datos",
+    "day.today": "Hoy",
+    "day.yesterday": "Ayer",
+    "ed.metric": "Lectura principal",
+    "ed.entity": "Sensor",
+    "ed.name": "Nombre (opcional)",
+    "ed.chipsMode": "Chips secundarios",
+    "ed.chipsItems": "Lecturas a mostrar",
+    "ed.language": "Idioma",
+    "ed.readingSensor": "Sensor de {reading} (autodetectado)",
+    "ed.metric.pm25": "PM2.5 — categorías de la EPA de EE. UU.",
+    "ed.metric.co2": "CO₂ — categorías de ventilación",
+    "ed.metric.pm10": "PM10 — categorías de la EPA de EE. UU.",
+    "ed.metric.voc": "Índice VOC — escala Sensirion",
+    "ed.metric.nox": "Índice NOx — escala Sensirion",
+    "ed.chips.auto": "Todas las lecturas del dispositivo",
+    "ed.chips.minimal": "Mínimo: temperatura, humedad y un contaminante",
+    "ed.chips.custom": "Personalizado: elige lecturas y asigna sensores",
+  },
+};
+
+// Readings whose display name is plain text (the PM/CO₂ names carry <sub>
+// markup and are the same in every language).
+const TRANSLATED_READINGS = new Set(["temperature", "humidity", "voc", "nox"]);
+
+/** Dictionary language to use: explicit override, else the Home Assistant UI
+ *  language ("es-419" → "es"), else English. */
+const resolveLang = (override, hass) => {
+  const raw = String(
+    override && override !== "auto" ? override : hass?.locale?.language ?? hass?.language ?? "en"
+  )
+    .toLowerCase()
+    .replace("_", "-");
+  if (I18N[raw]) return raw;
+  const base = raw.split("-")[0];
+  return I18N[base] ? base : "en";
+};
+
+/** Look up `key` (lang → English → fallback → the key itself) and fill {vars}. */
+const translate = (lang, key, vars, fallback) => {
+  let s = I18N[lang]?.[key] ?? I18N.en[key] ?? fallback ?? key;
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
+  return s;
+};
+
+/** Locale-aware number formatting. `fixed` keeps trailing zeros (e.g. "3.0");
+ *  otherwise they are dropped ("3"). Grouping is off so 1200 stays "1200". */
+const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
+  if (v == null || Number.isNaN(v)) return "–";
+  const opts = {
+    minimumFractionDigits: fixed ? digits : 0,
+    maximumFractionDigits: digits,
+    useGrouping: false,
+  };
+  try {
+    return Number(v).toLocaleString(locale, opts);
+  } catch {
+    return Number(v).toLocaleString("en", opts);
+  }
+};
+
+const CARD_VERSION = "1.4.0";
+
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
  *  card's own `name` option are freeform user text, so anything that reaches an
@@ -204,7 +424,7 @@ class AirQualitySceneCard extends HTMLElement {
     );
     // Generic name so the picker preview doesn't display whichever real
     // sensor the stub happened to grab. Cleared or replaced in the editor.
-    return { entity: entity ?? "sensor.pm2_5", name: "Air Quality" };
+    return { entity: entity ?? "sensor.pm2_5", name: translate(resolveLang(null, hass), "stub.name") };
   }
 
   static async getConfigElement() {
@@ -273,12 +493,13 @@ class AirQualitySceneCard extends HTMLElement {
     const st = this._related?.[key] && this._hass.states[this._related[key]];
     const unit = esc(st?.attributes?.unit_of_measurement ?? READINGS[key]?.unit ?? "");
     const base = {
-      pm1: { labelHtml: "PM<sub>1</sub>", short: "PM1", decimals: 0, chartFloor: 5, categories: PM25_CATEGORIES },
+      pm1: { labelHtml: "PM<sub>1</sub>", short: "PM1", decimals: 0, chartFloor: 5, categories: PM25_CATEGORIES, catScale: "pm25" },
       pm03: { labelHtml: "PM<sub>0.3</sub>", short: "PM0.3", decimals: 0, chartFloor: 0, color: "#5c6bc0" },
-      temperature: { labelHtml: "Temperature", short: "Temperature", decimals: 1, chartFloor: 0, color: "#ff8f00" },
-      humidity: { labelHtml: "Humidity", short: "Humidity", decimals: 0, chartFloor: 100, color: "#29b6f6" },
+      temperature: { labelHtml: this._t("reading.temperature"), short: this._t("reading.temperature"), decimals: 1, chartFloor: 0, color: "#ff8f00" },
+      humidity: { labelHtml: this._t("reading.humidity"), short: this._t("reading.humidity"), decimals: 0, chartFloor: 100, color: "#29b6f6" },
     }[key] ?? { labelHtml: key, short: key, decimals: 0, chartFloor: 0, color: "#607d8b" };
     return {
+      key,
       ...base,
       unit,
       categories:
@@ -320,6 +541,53 @@ class AirQualitySceneCard extends HTMLElement {
 
   getCardSize() {
     return 4;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Localisation                                                         */
+  /* ------------------------------------------------------------------ */
+
+  /** Locale for Intl / number formatting: config override, else HA's language. */
+  _locale() {
+    const l = this._config?.language;
+    return l && l !== "auto" ? l : this._hass?.locale?.language ?? this._hass?.language;
+  }
+
+  /** Dictionary language used for text (falls back to English). */
+  _lang() {
+    return resolveLang(this._config?.language, this._hass);
+  }
+
+  _t(key, vars, fallback) {
+    return translate(this._lang(), key, vars, fallback);
+  }
+
+  _fmt(v, digits = 1, fixed = false) {
+    return formatNumber(v, digits, this._locale() ?? "en", fixed);
+  }
+
+  _cap(s) {
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  }
+
+  /** Translated category label (`cat` comes from `metric.categories`). */
+  _catLabel(metric, cat) {
+    if (!cat?.key) return cat?.label ?? "";
+    return this._t(`cat.${metric.catScale ?? metric.key}.${cat.key}`, undefined, cat.label);
+  }
+
+  _mHtml(metric) {
+    return TRANSLATED_READINGS.has(metric.key)
+      ? this._t(`reading.${metric.key}`, undefined, metric.labelHtml)
+      : metric.labelHtml;
+  }
+
+  /** Short name for use mid-sentence: lower-cases the first letter of
+   *  ordinary words ("Índice VOC" → "índice VOC") but not acronyms. */
+  _mShort(metric) {
+    if (!TRANSLATED_READINGS.has(metric.key)) return metric.short;
+    const s = this._t(`reading.${metric.key}`, undefined, metric.short);
+    return /^\p{Lu}\p{Ll}/u.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s;
   }
 
   /* ------------------------------------------------------------------ */
@@ -370,7 +638,7 @@ class AirQualitySceneCard extends HTMLElement {
     root.innerHTML = `
       <style>${AirQualitySceneCard.styles}</style>
       <ha-card>
-        <div class="scene" role="button" tabindex="0" aria-label="Show air quality details">
+        <div class="scene" role="button" tabindex="0" aria-label="${this._t("aria.scene")}">
           <div class="sky"></div>
           <div class="clouds">
             <div class="cloud c1"></div><div class="cloud c2"></div><div class="cloud c3"></div>
@@ -438,18 +706,19 @@ class AirQualitySceneCard extends HTMLElement {
     const state = hass.states[this._config.entity];
     const scene = root.querySelector(".scene");
     const metric = this._metric();
+    scene.setAttribute("aria-label", this._t("aria.scene"));
 
     const name =
       this._config.name ||
       state?.attributes?.friendly_name?.replace(metric.nameSuffix, "") ||
       this._config.entity;
     root.querySelector(".name").textContent = name;
-    root.querySelector(".pm-label").innerHTML = metric.labelHtml;
+    root.querySelector(".pm-label").innerHTML = this._mHtml(metric);
     root.querySelector(".pm-unit").textContent = metric.unit;
 
     if (!state || state.state === "unavailable" || state.state === "unknown") {
       scene.dataset.category = "offline";
-      root.querySelector(".category").textContent = "Offline";
+      root.querySelector(".category").textContent = this._t("offline");
       root.querySelector(".pm-value").textContent = "–";
       root.querySelector(".mascot").innerHTML = this._mascotSvg("ok");
       root.querySelector(".chips").innerHTML = "";
@@ -463,8 +732,8 @@ class AirQualitySceneCard extends HTMLElement {
     scene.style.setProperty("--cat-sky-top", cat.sky[0]);
     scene.style.setProperty("--cat-sky-bottom", cat.sky[1]);
     scene.style.setProperty("--cat-ground", cat.ground);
-    root.querySelector(".category").textContent = cat.label;
-    root.querySelector(".pm-value").textContent = fmt(value, metric.decimals);
+    root.querySelector(".category").textContent = this._catLabel(metric, cat);
+    root.querySelector(".pm-value").textContent = this._fmt(value, metric.decimals);
     root.querySelector(".mascot").innerHTML = this._mascotSvg(cat.mood);
 
     this._relatedIds(state);
@@ -473,7 +742,7 @@ class AirQualitySceneCard extends HTMLElement {
         const r = READINGS[key];
         const st = r && this._related[key] && hass.states[this._related[key]];
         if (!st || isNaN(Number(st.state))) return "";
-        return `<span class="chip"><ha-icon icon="${r.icon}"></ha-icon>${fmt(Number(st.state), r.digits)}${r.unit}</span>`;
+        return `<span class="chip"><ha-icon icon="${r.icon}"></ha-icon>${this._fmt(Number(st.state), r.digits)}${r.unit}</span>`;
       })
       .join("");
 
@@ -582,7 +851,9 @@ class AirQualitySceneCard extends HTMLElement {
         <div class="tile-value">${value}</div>
         <div class="tile-sub">${sub}</div>
       </div>`;
-    const pending = (title) => tile(title, "…", "Collecting data — check back soon");
+    const pending = (title) => tile(title, "…", this._t("tile.pending"));
+    const peakTitle = this._t("tile.peak");
+    const co2AboveTitle = this._t("tile.above", { limit: `${CO2_VENTILATE_PPM} ppm` });
 
     let extraTiles;
     if (metric === METRICS.co2) {
@@ -596,19 +867,19 @@ class AirQualitySceneCard extends HTMLElement {
       const aboveH = aboveMs / 3600e3;
       extraTiles =
         (peak24 == null
-          ? pending("Peak — last 24 h")
+          ? pending(peakTitle)
           : tile(
-              "Peak — last 24 h",
-              `${fmt(peak24, 0)} ppm`,
-              `Highest reading · ${this._categoryFor(peak24).label}`
+              peakTitle,
+              `${this._fmt(peak24, 0)} ppm`,
+              this._t("tile.peakSub", { category: this._catLabel(metric, this._categoryFor(peak24)) })
             )) +
         (rows24.length
           ? tile(
-              `Above ${CO2_VENTILATE_PPM} ppm`,
-              aboveH < 0.1 ? "0 h" : `${fmt(aboveH, 1)} h`,
-              "Time past the ventilate line in the last 24 h"
+              co2AboveTitle,
+              aboveH < 0.1 ? "0 h" : `${this._fmt(aboveH, 1)} h`,
+              this._t("tile.co2AboveSub")
             )
-          : pending(`Above ${CO2_VENTILATE_PPM} ppm`));
+          : pending(co2AboveTitle));
     } else if (metric === METRICS.pm25) {
       const dailyMeans = stats.daily.filter((r) => r.mean != null);
       const avg30d = dailyMeans.length
@@ -619,18 +890,18 @@ class AirQualitySceneCard extends HTMLElement {
         : null;
       extraTiles =
         (avg30d == null
-          ? pending("WHO annual guideline")
+          ? pending(this._t("tile.whoTitle"))
           : tile(
-              `${(avg30d / WHO_ANNUAL_PM25).toFixed(1)}× the WHO annual guideline`,
-              `${fmt(avg30d)} µg/m³`,
-              `${dailyMeans.length}-day average · guideline ${WHO_ANNUAL_PM25} µg/m³`
+              this._t("tile.who", { ratio: this._fmt(avg30d / WHO_ANNUAL_PM25, 1, true) }),
+              `${this._fmt(avg30d)} µg/m³`,
+              this._t("tile.whoSub", { days: dailyMeans.length, guideline: this._fmt(WHO_ANNUAL_PM25, 1) })
             )) +
         (cigarettes == null
-          ? pending("Cigarettes smoked")
+          ? pending(this._t("tile.cig"))
           : tile(
-              "Cigarettes smoked",
-              cigarettes.toFixed(1),
-              `Equivalent pollution over the last ${dailyMeans.length} day${dailyMeans.length === 1 ? "" : "s"}`
+              this._t("tile.cig"),
+              this._fmt(cigarettes, 1, true),
+              this._t(dailyMeans.length === 1 ? "tile.cigSub.one" : "tile.cigSub.other", { n: dailyMeans.length })
             ));
     } else {
       // pm10 / voc / nox: peak reading and time spent above the "good" ceiling.
@@ -642,62 +913,62 @@ class AirQualitySceneCard extends HTMLElement {
       const rowMs = stats.short.length ? 5 * 60e3 : 3600e3;
       const aboveH = (rows24.filter((r) => r.mean > thr).length * rowMs) / 3600e3;
       const u = metric.unit ? ` ${metric.unit}` : "";
-      const above = `Above ${fmt(thr, metric.decimals)}${u}`;
+      const above = this._t("tile.above", { limit: `${this._fmt(thr, metric.decimals)}${u}` });
       extraTiles =
         (peak24 == null
-          ? pending("Peak — last 24 h")
+          ? pending(peakTitle)
           : tile(
-              "Peak — last 24 h",
-              `${fmt(peak24, metric.decimals)}${u}`,
-              `Highest reading · ${this._categoryFor(peak24).label}`
+              peakTitle,
+              `${this._fmt(peak24, metric.decimals)}${u}`,
+              this._t("tile.peakSub", { category: this._catLabel(metric, this._categoryFor(peak24)) })
             )) +
         (rows24.length
           ? tile(
               above,
-              aboveH < 0.1 ? "0 h" : `${fmt(aboveH, 1)} h`,
-              `Time above the ${metric.categories[0].label.toLowerCase()} range in the last 24 h`
+              aboveH < 0.1 ? "0 h" : `${this._fmt(aboveH, 1)} h`,
+              this._t("tile.aboveSub", { range: this._catLabel(metric, metric.categories[0]).toLowerCase() })
             )
           : pending(above));
     }
 
     overlay.innerHTML = `
       <div class="backdrop"></div>
-      <div class="sheet" role="dialog" aria-label="${name} air quality details">
-        <button class="close" aria-label="Close">✕</button>
+      <div class="sheet" role="dialog" aria-label="${this._t("aria.sheet", { name })}">
+        <button class="close" aria-label="${this._t("aria.close")}">✕</button>
         <div class="sheet-head" style="--cat-color:${cat?.color ?? "#9e9e9e"}">
           <svg class="mascot big" viewBox="0 0 80 80">${this._mascotSvg(cat?.mood ?? "ok")}</svg>
           <div>
             <div class="sheet-name">${name}</div>
-            <div class="sheet-cat">${cat?.label ?? "Offline"}</div>
-            <div class="sheet-pm">${metric.labelHtml} <b>${fmt(value, metric.decimals)}</b> ${metric.unit}</div>
+            <div class="sheet-cat">${cat ? this._catLabel(metric, cat) : this._t("offline")}</div>
+            <div class="sheet-pm">${this._mHtml(metric)} <b>${this._fmt(value, metric.decimals)}</b> ${metric.unit}</div>
           </div>
         </div>
         <div class="tiles">
-          ${tile("Last 24 h", avg24 == null ? "…" : `${fmt(avg24, metric.decimals)} ${metric.unit}`.trim(), `average ${metric.short}`)}
-          ${tile("Last 12 h", avg12 == null ? "…" : `${fmt(avg12, metric.decimals)} ${metric.unit}`.trim(), `average ${metric.short}`)}
+          ${tile(this._t("tile.last24"), avg24 == null ? "…" : `${this._fmt(avg24, metric.decimals)} ${metric.unit}`.trim(), this._t("tile.average", { metric: this._mShort(metric) }))}
+          ${tile(this._t("tile.last12"), avg12 == null ? "…" : `${this._fmt(avg12, metric.decimals)} ${metric.unit}`.trim(), this._t("tile.average", { metric: this._mShort(metric) }))}
           ${extraTiles}
         </div>
         <div class="section">
-          <h3>${metric.labelHtml} — last 24 hours <span class="unit">${metric.unit}</span></h3>
+          <h3>${this._t("chart.title24", { metric: this._mHtml(metric) })} <span class="unit">${metric.unit}</span></h3>
           <div class="chart24" data-reading="__primary"></div>
         </div>
         <div class="section">
-          <h3>${metric.labelHtml} — last 10 days by hour</h3>
+          <h3>${this._t("chart.title10", { metric: this._mHtml(metric) })}</h3>
           <div class="heatmap"></div>
           <div class="legend"></div>
         </div>
-        ${secKeys.length ? `<h2 class="subhead">Every reading — last 24 hours</h2>` : ""}
+        ${secKeys.length ? `<h2 class="subhead">${this._t("chart.every")}</h2>` : ""}
         ${secKeys
           .map((k) => {
             const rm = this._readingMetric(k);
             return `
         <div class="section">
-          <h3>${rm.labelHtml} — last 24 hours ${rm.unit ? `<span class="unit">${rm.unit}</span>` : ""}</h3>
+          <h3>${this._t("chart.title24", { metric: this._mHtml(rm) })} ${rm.unit ? `<span class="unit">${rm.unit}</span>` : ""}</h3>
           <div class="chart24" data-reading="${k}"></div>
         </div>`;
           })
           .join("")}
-        <div class="attribution">${metric.attribution}</div>
+        <div class="attribution">${this._t(`attr.${metric.key}`, undefined, metric.attribution)}</div>
       </div>`;
 
     overlay.querySelector(".backdrop").addEventListener("click", () => this._closeOverlay());
@@ -706,7 +977,7 @@ class AirQualitySceneCard extends HTMLElement {
     this._render24hChart(overlay.querySelector('.chart24[data-reading="__primary"]'), stats, metric);
     this._renderHeatmap(overlay.querySelector(".heatmap"), stats.hourly);
     overlay.querySelector(".legend").innerHTML = metric.categories
-      .map((c) => `<span class="lg"><i style="background:${c.color}"></i>${c.label}</span>`)
+      .map((c) => `<span class="lg"><i style="background:${c.color}"></i>${this._catLabel(metric, c)}</span>`)
       .join("");
     for (const k of secKeys) {
       this._render24hChart(
@@ -718,7 +989,7 @@ class AirQualitySceneCard extends HTMLElement {
   }
 
   _hourLabel(date) {
-    return date.toLocaleTimeString(this._hass?.locale?.language, { hour: "numeric" });
+    return date.toLocaleTimeString(this._locale(), { hour: "numeric" });
   }
 
   _render24hChart(el, stats, metric = this._metric()) {
@@ -738,7 +1009,7 @@ class AirQualitySceneCard extends HTMLElement {
       b.length ? b.reduce((a, v) => a + v, 0) / b.length : null
     );
     if (!values.some((v) => v != null)) {
-      el.innerHTML = `<div class="empty">No history yet — the chart fills in as Home Assistant records data.</div>`;
+      el.innerHTML = `<div class="empty">${this._t("chart.noHistory")}</div>`;
       return;
     }
 
@@ -758,7 +1029,7 @@ class AirQualitySceneCard extends HTMLElement {
       }
       const when = new Date(t0 + i * bucketMs);
       hits += `<rect class="hit" x="${x}" y="0" width="${bw}" height="${H - padB}" fill="transparent"
-        data-tip="${v == null ? "no data" : `${fmt(v, metric.decimals)} ${metric.unit} · ${this._catForMetric(metric, v).label}`.trim()} — ${this._hourLabel(when)}"/>`;
+        data-tip="${v == null ? this._t("chart.noData") : `${this._fmt(v, metric.decimals)} ${metric.unit} · ${this._catLabel(metric, this._catForMetric(metric, v))}`.trim()} — ${this._hourLabel(when)}"/>`;
     });
 
     const ticks = [0, Math.round(maxV / 2), Math.round(maxV)];
@@ -789,7 +1060,7 @@ class AirQualitySceneCard extends HTMLElement {
       byKey.set(`${d.toDateString()}|${d.getHours()}`, r.mean);
     }
     if (!byKey.size) {
-      el.innerHTML = `<div class="empty">No hourly statistics yet — this view builds up over the next days.</div>`;
+      el.innerHTML = `<div class="empty">${this._t("chart.noHourly")}</div>`;
       return;
     }
 
@@ -799,16 +1070,16 @@ class AirQualitySceneCard extends HTMLElement {
     for (let day = 0; day < 10; day++) {
       const date = new Date(today.getTime() - day * 24 * 3600e3);
       const label =
-        day === 0 ? "Today" : day === 1 ? "Yesterday"
-        : date.toLocaleDateString(this._hass?.locale?.language, { weekday: "long" });
+        day === 0 ? this._t("day.today") : day === 1 ? this._t("day.yesterday")
+        : this._cap(date.toLocaleDateString(this._locale(), { weekday: "long" }));
       let cells = "";
       for (let h = 0; h < 24; h++) {
         const v = byKey.get(`${date.toDateString()}|${h}`);
         if (v == null) {
-          cells += `<i class="cell empty-cell" data-tip="no data — ${label} ${h}:00"></i>`;
+          cells += `<i class="cell empty-cell" data-tip="${this._t("chart.noData")} — ${label} ${h}:00"></i>`;
         } else {
           const c = this._categoryFor(v);
-          cells += `<i class="cell" style="background:${c.color}" data-tip="${fmt(v, metric.decimals)} ${metric.unit} · ${c.label} — ${label} ${h}:00"></i>`;
+          cells += `<i class="cell" style="background:${c.color}" data-tip="${this._fmt(v, metric.decimals)} ${metric.unit} · ${this._catLabel(metric, c)} — ${label} ${h}:00"></i>`;
         }
       }
       rows += `<div class="hm-row">${cells}<span class="hm-label">${label}</span></div>`;
@@ -958,9 +1229,20 @@ class AirQualitySceneCardEditor extends HTMLElement {
     this._render();
   }
 
+  _lang() {
+    return resolveLang(this._config?.language, this._hass);
+  }
+
+  _t(key, vars, fallback) {
+    return translate(this._lang(), key, vars, fallback);
+  }
+
   set hass(hass) {
     this._hass = hass;
-    if (this._form) this._form.hass = hass;
+    if (this._form) {
+      this._form.hass = hass;
+      if (this._lang() !== this._renderedLang) this._render();
+    }
   }
 
   async _render() {
@@ -972,14 +1254,15 @@ class AirQualitySceneCardEditor extends HTMLElement {
       this._form = document.createElement("ha-form");
       this._form.computeLabel = (s) => {
         const fixed = {
-          metric: "Primary reading",
-          entity: "Sensor",
-          name: "Name (optional)",
-          chips_mode: "Secondary chips",
-          chips_items: "Readings to show",
+          metric: this._t("ed.metric"),
+          entity: this._t("ed.entity"),
+          name: this._t("ed.name"),
+          chips_mode: this._t("ed.chipsMode"),
+          chips_items: this._t("ed.chipsItems"),
+          language: this._t("ed.language"),
         };
         if (fixed[s.name]) return fixed[s.name];
-        if (READING_LABELS[s.name]) return `${READING_LABELS[s.name]} sensor (auto-detected)`;
+        if (READING_LABELS[s.name]) return this._t("ed.readingSensor", { reading: this._t(`reading.${s.name}`, undefined, READING_LABELS[s.name]) });
         return s.name;
       };
       this._form.addEventListener("value-changed", (ev) => {
@@ -991,6 +1274,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
       this.appendChild(this._form);
     }
     const cfg = this._config ?? {};
+    this._renderedLang = this._lang();
     const metric = cfg.metric ?? "pm25";
     // VOC/NOx indices carry no device_class, so the entity picker can't filter
     // by one — offer any sensor for those.
@@ -1008,6 +1292,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
       metric,
       entity: cfg.entity,
       name: cfg.name,
+      language: cfg.language ?? "auto",
       chips_mode: mode,
       chips_items: items,
       ...Object.fromEntries(Object.keys(READINGS).map((k) => [k, cfg[k]]).filter(([, v]) => v != null)),
@@ -1020,11 +1305,11 @@ class AirQualitySceneCardEditor extends HTMLElement {
           select: {
             mode: "dropdown",
             options: [
-              { value: "pm25", label: "PM2.5 — US EPA categories" },
-              { value: "co2", label: "CO₂ — ventilation categories" },
-              { value: "pm10", label: "PM10 — US EPA categories" },
-              { value: "voc", label: "VOC index — Sensirion scale" },
-              { value: "nox", label: "NOx index — Sensirion scale" },
+              { value: "pm25", label: this._t("ed.metric.pm25") },
+              { value: "co2", label: this._t("ed.metric.co2") },
+              { value: "pm10", label: this._t("ed.metric.pm10") },
+              { value: "voc", label: this._t("ed.metric.voc") },
+              { value: "nox", label: this._t("ed.metric.nox") },
             ],
           },
         },
@@ -1038,14 +1323,26 @@ class AirQualitySceneCardEditor extends HTMLElement {
       },
       { name: "name", selector: { text: {} } },
       {
+        name: "language",
+        selector: {
+          select: {
+            mode: "dropdown",
+            options: [
+              { value: "auto", label: this._t("lang.auto") },
+              ...Object.keys(I18N).map((l) => ({ value: l, label: I18N[l]["lang.name"] })),
+            ],
+          },
+        },
+      },
+      {
         name: "chips_mode",
         selector: {
           select: {
             mode: "dropdown",
             options: [
-              { value: "auto", label: "All readings on the device" },
-              { value: "minimal", label: "Minimal — temperature, humidity & one pollutant" },
-              { value: "custom", label: "Customise — pick readings & assign sensors" },
+              { value: "auto", label: this._t("ed.chips.auto") },
+              { value: "minimal", label: this._t("ed.chips.minimal") },
+              { value: "custom", label: this._t("ed.chips.custom") },
             ],
           },
         },
@@ -1060,7 +1357,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
           select: {
             multiple: true,
             mode: "list",
-            options: allItems.map((k) => ({ value: k, label: READING_LABELS[k] ?? k })),
+            options: allItems.map((k) => ({ value: k, label: this._t(`reading.${k}`, undefined, READING_LABELS[k] ?? k) })),
           },
         },
       });
@@ -1082,6 +1379,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
   _configFromForm(v) {
     const config = { type: "custom:air-quality-scene-card", metric: v.metric, entity: v.entity };
     if (v.name) config.name = v.name;
+    if (v.language && v.language !== "auto") config.language = v.language;
 
     if (v.chips_mode === "custom") {
       const list = Array.isArray(v.chips_items)
@@ -1113,12 +1411,15 @@ if (!customElements.get("air-quality-scene-card-editor")) {
 }
 
 window.customCards = window.customCards || [];
+const bootLang = resolveLang(
+  null,
+  document.querySelector("home-assistant")?.hass ?? { language: navigator.language }
+);
 if (!window.customCards.some((c) => c.type === "air-quality-scene-card")) {
   window.customCards.push({
     type: "air-quality-scene-card",
     name: "Air Quality Scene Card",
-    description:
-      "Animated air-quality card for PM2.5, CO₂, PM10, VOC or NOx, with auto-discovered chips and tap-to-expand charts and history.",
+    description: translate(bootLang, "card.description"),
     preview: true,
     documentationURL: "https://github.com/keranm/air-quality-scene-card",
   });
