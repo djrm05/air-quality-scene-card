@@ -536,7 +536,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0-compact.2";
+const CARD_VERSION = "1.4.0-compact.3";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -1445,10 +1445,14 @@ class AirQualitySceneCard extends HTMLElement {
       .pm { top: 57px; }
       .pm-value { font-size: 30px; }
       .meta { top: 76px; left: 55%; right: 10px; gap: 5px; }
-      .meta .chip ha-icon { display: none; }
+      .meta .chip ha-icon { display: inline-flex; --mdc-icon-size: 12px; }
       .meta .chip-reading { font-size: 10px; }
       .chip { padding: 3px 4px; gap: 0; }
-      .chips .chip ha-icon { display: none; }
+      /* Put the icon beside the label, leaving the whole width for the value. */
+      .chips .chip { position: relative; display: block; }
+      .chips .chip ha-icon { display: inline-flex; position: absolute;
+        left: 4px; top: 3px; --mdc-icon-size: 12px; }
+      .chips .chip-label { padding-left: 15px; }
       .chip-reading { font-size: 13px; }
     }
     @container (max-width: 300px) {
