@@ -536,7 +536,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0-compact.1";
+const CARD_VERSION = "1.4.0-compact.2";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -975,6 +975,8 @@ class AirQualitySceneCard extends HTMLElement {
 
   async _openOverlay() {
     const overlay = this.shadowRoot.querySelector(".overlay");
+    const previousSheet = overlay.querySelector(".sheet");
+    if (previousSheet) previousSheet.scrollTop = 0;
     overlay.hidden = false;
     document.body.style.setProperty("overflow", "hidden");
     this._escHandler = (ev) => ev.key === "Escape" && this._closeOverlay();
@@ -1037,6 +1039,8 @@ class AirQualitySceneCard extends HTMLElement {
 
   _renderOverlay() {
     const overlay = this.shadowRoot.querySelector(".overlay");
+    // Preserve the reading position across live updates and history loading.
+    const scrollTop = overlay.querySelector(".sheet")?.scrollTop ?? 0;
     const hass = this._hass;
     const metric = this._metric();
     const state = hass.states[this._config.entity];
@@ -1206,6 +1210,8 @@ class AirQualitySceneCard extends HTMLElement {
         this._readingMetric(k)
       );
     }
+    // Restore after all charts establish the sheet's final scrollable height.
+    overlay.querySelector(".sheet").scrollTop = scrollTop;
   }
 
   _hourLabel(date) {
