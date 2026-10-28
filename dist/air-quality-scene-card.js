@@ -536,7 +536,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0";
+const CARD_VERSION = "1.4.0-compact.1";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -846,10 +846,9 @@ class AirQualitySceneCard extends HTMLElement {
             </div>
             <div class="mascot-badge"><svg class="mascot" viewBox="0 0 80 80"></svg></div>
           </div>
-          <div class="strip">
-            <div class="pm"><span class="pm-label"></span> <b class="pm-value"></b> <span class="pm-unit"></span></div>
-            <div class="chips"></div>
-          </div>
+          <div class="pm"><b class="pm-value"></b><span class="pm-caption"><span class="pm-label"></span><span class="pm-unit"></span></span></div>
+          <div class="meta"></div>
+          <div class="strip"><div class="chips" role="region" tabindex="0" aria-label="${esc(this._t("ed.chipsItems"))}"></div></div>
         </div>
       </ha-card>
       <div class="overlay" hidden></div>
@@ -858,6 +857,7 @@ class AirQualitySceneCard extends HTMLElement {
     const scene = root.querySelector(".scene");
     scene.addEventListener("click", () => this._openOverlay());
     scene.addEventListener("keydown", (ev) => {
+      if (ev.target === root.querySelector(".chips") && ev.key === " ") return;
       if (ev.key === "Enter" || ev.key === " ") {
         ev.preventDefault();
         this._openOverlay();
@@ -912,12 +912,13 @@ class AirQualitySceneCard extends HTMLElement {
     root.querySelector(".pm-label").innerHTML = this._mHtml(metric);
     root.querySelector(".pm-unit").textContent = metric.unit;
 
-    if (!state || state.state === "unavailable" || state.state === "unknown") {
+    if (!state || ["unavailable", "unknown", ""].includes(state.state) || !Number.isFinite(Number(state.state))) {
       scene.dataset.category = "offline";
       root.querySelector(".category").textContent = this._t("offline");
       root.querySelector(".pm-value").textContent = "–";
       root.querySelector(".mascot").innerHTML = this._mascotSvg("ok");
-      root.querySelector(".chips").innerHTML = "";
+      this._renderCompactReadings(metric);
+      if (!root.querySelector(".overlay").hidden) this._renderOverlay();
       return;
     }
 
@@ -932,26 +933,40 @@ class AirQualitySceneCard extends HTMLElement {
     root.querySelector(".pm-value").textContent = this._fmt(value, metric.decimals);
     root.querySelector(".mascot").innerHTML = this._mascotSvg(cat.mood);
 
-    this._relatedIds(state);
-    root.querySelector(".chips").innerHTML = this._chipKeys(metric)
-      .map((key) => {
-        const r = READINGS[key];
-        const st = r && this._related[key] && hass.states[this._related[key]];
-        if (!st || ["unavailable", "unknown", ""].includes(st.state)) return "";
-        const num = Number(st.state);
-        if (isNaN(num)) {
-          // Text readings (e.g. a qualitative "air quality" label) show as-is.
-          if (!r.text) return "";
-          const txt = this._hass.formatEntityState?.(st) ?? st.state;
-          return `<span class="chip"><ha-icon icon="${r.icon}"></ha-icon>${esc(txt)}</span>`;
-        }
-        const icon = r.iconFn ? r.iconFn(num) : r.icon;
-        const digits = r.digitsFor ? r.digitsFor(st) : r.digits;
-        return `<span class="chip"><ha-icon icon="${icon}"></ha-icon>${this._fmt(num, digits)}${r.unit}</span>`;
-      })
-      .join("");
+    this._renderCompactReadings(metric);
 
     if (!root.querySelector(".overlay").hidden) this._renderOverlay();
+  }
+
+  /** Compact layout uses real entity units; it never guesses gas concentrations. */
+  _renderCompactReadings(metric) {
+    this._relatedIds(this._hass.states[this._config.entity]);
+    const readings = [];
+    const metadata = [];
+    for (const key of this._chipKeys(metric)) {
+      const r = READINGS[key];
+      const st = r && this._hass.states[this._related[key]];
+      if (!st) continue;
+      const label = this._t(`reading.${key}`, undefined, READING_LABELS[key] ?? key);
+      const short = { voc: "VOC", nox: "NOx", hcho: "HCHO", co: "CO" }[key] ?? label;
+      const missing = ["unavailable", "unknown", ""].includes(st.state);
+      const num = Number(st.state);
+      const numeric = !missing && Number.isFinite(num);
+      if (!missing && !numeric && !r.text) continue;
+      const digits = r.digitsFor ? r.digitsFor(st) : r.digits;
+      const value = missing ? "–" : numeric ? this._fmt(num, digits)
+        : (this._hass.formatEntityState?.(st) ?? st.state);
+      const unit = numeric ? (st.attributes?.unit_of_measurement ?? r.unit) : "";
+      const icon = numeric && r.iconFn ? r.iconFn(num) : r.icon;
+      const description = `${label}: ${value}${unit ? ` ${unit}` : ""}`;
+      const html = `<span class="chip" title="${esc(description)}" aria-label="${esc(description)}">
+        <ha-icon icon="${esc(icon)}" aria-hidden="true"></ha-icon>
+        <span class="chip-content"><span class="chip-label">${esc(short)}</span>
+        <span class="chip-reading">${esc(value)}<small>${esc(unit)}</small></span></span></span>`;
+      (key === "aqi" || key === "battery" ? metadata : readings).push(html);
+    }
+    this.shadowRoot.querySelector(".chips").innerHTML = readings.join("");
+    this.shadowRoot.querySelector(".meta").innerHTML = metadata.join("");
   }
 
   /* ------------------------------------------------------------------ */
@@ -1364,6 +1379,80 @@ class AirQualitySceneCard extends HTMLElement {
     .chips { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 10px; font-size: .9rem; }
     .chip { display: inline-flex; align-items: center; gap: 2px; }
     .chip ha-icon { --mdc-icon-size: 16px; }
+
+    /* Compact redesign: fixed 190 px, five columns, two visible rows.
+       Additional readings remain reachable by scrolling inside the panel. */
+    :host { container-type: inline-size; }
+    .scene { height: 190px; color: #162a24; }
+    .head { padding: 12px 14px 0; gap: 8px; }
+    .titles { display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 48px; }
+    .name { font-size: 14px; line-height: 20px; font-weight: 650;
+      color: #20372e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .category { font-size: 11px; line-height: 16px; max-width: 48%; min-width: 0;
+      padding: 2px 7px; border-radius: 12px; background: rgba(255,255,255,.78);
+      color: #20372e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+    .category::before { content: ""; display: inline-block; width: 6px; height: 6px;
+      border-radius: 50%; margin-right: 4px; background: var(--cat-color, #888); vertical-align: 1px; }
+    .mascot-badge { position: absolute; right: 14px; top: 10px; width: 44px; height: 44px; border-width: 2px; }
+    .mascot { width: 36px; height: 36px; }
+    .pm { position: absolute; top: 40px; left: 14px; right: 45%; display: flex;
+      align-items: baseline; gap: 7px; min-width: 0; white-space: nowrap; }
+    .pm-value { font-size: clamp(30px, 9cqi, 48px); font-weight: 750;
+      line-height: 1.1; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; }
+    .pm-caption { display: flex; flex-direction: column; font-size: 11px; font-weight: 600; line-height: 1.3; }
+    .pm-unit { font-size: 10px; opacity: .8; }
+    .meta { position: absolute; right: 14px; top: 71px; left: 57%; display: flex;
+      justify-content: flex-end; align-items: center; gap: 7px; color: #20372e; }
+    .meta .chip { border: 0; padding: 0; min-width: 0; gap: 3px; }
+    .meta .chip-content { min-width: 0; }
+    .meta .chip-label { display: none; }
+    .meta .chip-reading { font-size: 11px; font-weight: 600; }
+    .meta .chip ha-icon { --mdc-icon-size: 15px; }
+    .hills { bottom: 76px; height: 42px; opacity: .65; }
+    .clouds { opacity: .55; }
+    .strip, .scene[data-category="offline"] .strip {
+      position: absolute; bottom: 5px; left: 5px; right: 5px; height: 78px;
+      box-sizing: border-box; padding: 0; border-radius: 12px;
+      background: rgba(255,255,255,.87); color: #162a24;
+      border: 1px solid rgba(30,60,40,.08); overflow: hidden; }
+    .chips { display: grid; width: 100%; height: 100%; box-sizing: border-box;
+      grid-template-columns: repeat(5, minmax(0, 1fr)); grid-auto-rows: 38px;
+      gap: 0; justify-content: initial; overflow-y: auto; overscroll-behavior: contain;
+      scrollbar-width: thin; font-size: 11px; }
+    .chip { display: flex; align-items: center; gap: 5px; min-width: 0;
+      padding: 4px 6px; box-sizing: border-box; border-right: 1px solid rgba(30,60,40,.08);
+      border-bottom: 1px solid rgba(30,60,40,.08); }
+    .chip ha-icon { --mdc-icon-size: 17px; color: #316b47; flex: none; }
+    .chip-content { display: flex; flex-direction: column; min-width: 0; }
+    .chip-label { font-size: 9px; line-height: 12px; opacity: .76;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chip-reading { font-size: 14px; line-height: 17px; font-weight: 700;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+    .chip-reading small { font-size: 9px; margin-left: 2px; font-weight: 500; }
+    .scene[data-category="offline"] { --cat-color: #888; }
+    .scene[data-category="offline"] .hills { opacity: .2; }
+    .chips:focus-visible { outline: 2px solid var(--primary-color, #316b47); outline-offset: -2px; }
+    @container (max-width: 400px) {
+      .titles { flex-direction: column; align-items: flex-start; gap: 1px; }
+      .name { font-size: 12px; max-width: 100%; }
+      .category { max-width: 100%; font-size: 10px; line-height: 13px; }
+      .pm { top: 57px; }
+      .pm-value { font-size: 30px; }
+      .meta { top: 76px; left: 55%; right: 10px; gap: 5px; }
+      .meta .chip ha-icon { display: none; }
+      .meta .chip-reading { font-size: 10px; }
+      .chip { padding: 3px 4px; gap: 0; }
+      .chips .chip ha-icon { display: none; }
+      .chip-reading { font-size: 13px; }
+    }
+    @container (max-width: 300px) {
+      .chips { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .pm { gap: 4px; }
+      .pm-caption { font-size: 10px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cloud, .mascot-badge { animation: none; }
+    }
 
     /* Expanded sheet */
     .overlay { position: fixed; inset: 0; z-index: 999; }
