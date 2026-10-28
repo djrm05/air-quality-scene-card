@@ -27,6 +27,9 @@
  * option chooses between "auto" (all discovered readings) and "minimal"
  * (temperature, humidity and one complementary pollutant), or an explicit list.
  *
+ * Colour scale: `standard: who` switches PM2.5 / PM10 (and CO / formaldehyde
+ * charts) to WHO guideline levels; the default `epa` keeps the US EPA bands.
+ *
  * Language: all text follows the Home Assistant UI language (English and
  * Spanish built in, English fallback). Force one with `language: es`.
  */
@@ -152,12 +155,57 @@ const METRICS = {
   },
 };
 
+// ---- WHO colour scale (opt-in with `standard: who`) ---------------------------
+// PM2.5 / PM10: the WHO 2021 24-hour guideline (first band) followed by interim
+// targets 4 → 1. CO and formaldehyde: WHO guideline values converted to the
+// sensor's own unit (anything unrecognised keeps the neutral scale). CO₂, VOC and
+// NOx have no WHO guideline, so they always keep their own scale. WHO values are
+// 24-hour means (30 min for formaldehyde); the card compares the current reading.
+const whoScale = (maxes, labels) =>
+  maxes.map((max, i) => ({ ...PM25_CATEGORIES[i], max, label: labels[i] }));
+const WHO_PM_LABELS = [
+  "Within WHO guideline", "Interim target 4", "Interim target 3",
+  "Interim target 2", "Interim target 1", "Above all targets",
+];
+const WHO_CO_LABELS = [
+  "Within WHO guideline", "Above WHO 24 h guideline", "Above indoor 24 h limit",
+  "Above 8 h limit", "Above 1 h limit", "Above 15 min limit",
+];
+const WHO_SCALES = {
+  pm25: {
+    categories: whoScale([15, 25, 37.5, 50, 75, Infinity], WHO_PM_LABELS),
+    catScale: "pm25who", attrKey: "pm25who", chartFloor: 25, who: true,
+  },
+  pm10: {
+    categories: whoScale([45, 50, 75, 100, 150, Infinity], WHO_PM_LABELS),
+    catScale: "pm10who", attrKey: "pm10who", chartFloor: 50, who: true,
+  },
+};
+// CO limits: 4 mg/m³ (2021, 24 h) then 7 / 10 / 35 / 100 mg/m³ (24 h indoor, 8 h,
+// 1 h, 15 min). ppm uses 1 ppm ≈ 1.145 mg/m³ at 25 °C. Formaldehyde: 0.1 mg/m³ / 30 min.
+const WHO_CO_BY_UNIT = {
+  ppm: [3.5, 6.1, 8.7, 30.5, 87.3],
+  ppb: [3500, 6100, 8700, 30500, 87300],
+  "mg/m3": [4, 7, 10, 35, 100],
+  "ug/m3": [4000, 7000, 10000, 35000, 100000],
+};
+const WHO_HCHO_BY_UNIT = { "mg/m3": 0.1, "ug/m3": 100, ppm: 0.08, ppb: 80 };
+const normUnit = (u) => String(u ?? "").replace(/[µμ]/g, "u").replace(/³/g, "3").replace(/\s/g, "").toLowerCase();
+
 // Every secondary reading the card can discover on the same device and show as
 // a chip. `dc` is the Home Assistant device_class when the platform sets one;
 // `idRe` matches the entity_id for readings that carry none (VOC/NOx indices
 // and the PM0.3 particle count). Explicit config overrides win over discovery.
 // Each reading gets a distinct icon so the chips are legible at a glance even
 // when several are shown together (three PM sizes, two Sensirion indices).
+// Gas readings are published in ppb / µg/m³ (whole numbers) by some devices and
+// in mg/m³ (small decimals) by others, so precision follows the unit.
+const unitDigits = (st) => (/mg/i.test(st?.attributes?.unit_of_measurement ?? "") ? 3 : 0);
+const batteryIcon = (v) => {
+  const n = Math.max(0, Math.min(100, Math.round(v / 10) * 10));
+  return n === 100 ? "mdi:battery" : n === 0 ? "mdi:battery-outline" : `mdi:battery-${n}`;
+};
+
 const READINGS = {
   temperature: { dc: "temperature", icon: "mdi:thermometer", unit: "°", digits: 0 },
   humidity: { dc: "humidity", icon: "mdi:water-percent", unit: "%", digits: 0 },
@@ -168,10 +216,34 @@ const READINGS = {
   pm03: { icon: "mdi:grain", unit: "", digits: 0, idRe: /_pm_?0_?3$/i },
   voc: { icon: "mdi:scent", unit: "", digits: 0, idRe: /_[tv]?voc(_index)?$/i },
   nox: { icon: "mdi:smog", unit: "", digits: 0, idRe: /_nox(_index)?$/i },
+  // Total VOC as a concentration (ppb, µg/m³ or mg/m³) — not the Sensirion index above.
+  tvoc: {
+    dc: ["volatile_organic_compounds", "volatile_organic_compounds_parts"],
+    icon: "mdi:air-filter", unit: "", digits: 0, digitsFor: unitDigits,
+    idRe: /_(tvoc|compuestos_organicos_volatiles|volatile_organic_compounds)$/i,
+  },
+  hcho: {
+    icon: "mdi:flask-outline", unit: "", digits: 0, digitsFor: unitDigits,
+    idRe: /_(formaldehyde|hcho|formaldehido)$/i,
+  },
+  co: {
+    dc: "carbon_monoxide", icon: "mdi:molecule-co", unit: "", digits: 1,
+    idRe: /_(co|carbon_monoxide|monoxido_de_carbono)$/i,
+  },
+  // Device-provided air-quality rating: a number (AQI) or a word ("good"). Words
+  // are shown as a text chip and get no chart.
+  aqi: {
+    dc: "aqi", icon: "mdi:gauge", unit: "", digits: 0, text: true,
+    idRe: /_(aqi|air_quality(_index)?|calidad_del_aire)$/i,
+  },
+  battery: { dc: "battery", icon: "mdi:battery", iconFn: batteryIcon, unit: "%", digits: 0 },
 };
 
 // Order chips appear in when `chips: auto`.
-const CHIP_ORDER = ["temperature", "humidity", "co2", "pm25", "pm1", "pm10", "pm03", "voc", "nox"];
+const CHIP_ORDER = [
+  "temperature", "humidity", "co2", "pm25", "pm1", "pm10", "pm03", "voc", "nox",
+  "tvoc", "hcho", "co", "aqi", "battery",
+];
 
 // Friendly labels for the editor's reading pickers / tick list.
 const READING_LABELS = {
@@ -184,6 +256,11 @@ const READING_LABELS = {
   pm03: "PM0.3",
   voc: "VOC index",
   nox: "NOx index",
+  tvoc: "TVOC",
+  hcho: "Formaldehyde",
+  co: "Carbon monoxide",
+  aqi: "Air quality",
+  battery: "Battery",
 };
 
 /* ------------------------------------------------------------------ */
@@ -236,6 +313,32 @@ const I18N = {
     "reading.pm03": "PM0.3",
     "reading.voc": "VOC index",
     "reading.nox": "NOx index",
+    "reading.tvoc": "TVOC",
+    "reading.hcho": "Formaldehyde",
+    "reading.co": "Carbon monoxide",
+    "reading.aqi": "Air quality",
+    "reading.battery": "Battery",
+    ...catKeys("pm25who", {
+      good: "Within WHO guideline", moderate: "Interim target 4", usg: "Interim target 3",
+      unhealthy: "Interim target 2", very_unhealthy: "Interim target 1", hazardous: "Above all targets",
+    }),
+    ...catKeys("pm10who", {
+      good: "Within WHO guideline", moderate: "Interim target 4", usg: "Interim target 3",
+      unhealthy: "Interim target 2", very_unhealthy: "Interim target 1", hazardous: "Above all targets",
+    }),
+    ...catKeys("cowho", {
+      good: "Within WHO guideline", moderate: "Above WHO 24 h guideline", usg: "Above indoor 24 h limit",
+      unhealthy: "Above 8 h limit", very_unhealthy: "Above 1 h limit", hazardous: "Above 15 min limit",
+    }),
+    ...catKeys("hchowho", { good: "Within WHO guideline", unhealthy: "Above WHO guideline" }),
+    "attr.pm25who":
+      "Categories follow the WHO 2021 air quality guideline for 24-hour mean PM2.5 (15 µg/m³) and its interim targets (25, 37.5, 50 and 75 µg/m³). WHO values are 24-hour means; the card compares the current reading. History recorded by Home Assistant's long-term statistics.",
+    "attr.pm10who":
+      "Categories follow the WHO 2021 air quality guideline for 24-hour mean PM10 (45 µg/m³) and its interim targets (50, 75, 100 and 150 µg/m³). WHO values are 24-hour means; the card compares the current reading. History recorded by Home Assistant's long-term statistics.",
+    "tile.aboveGuidelineSub": "Time above the WHO guideline in the last 24 h",
+    "ed.standard": "Colour scale",
+    "ed.standard.epa": "US EPA (default)",
+    "ed.standard.who": "WHO 2021 guidelines (PM, CO, formaldehyde)",
     "attr.pm25":
       "Categories follow the US EPA PM2.5 breakpoints (May 2024). History recorded by Home Assistant's long-term statistics.",
     "attr.co2":
@@ -314,6 +417,32 @@ const I18N = {
     "reading.pm03": "PM0.3",
     "reading.voc": "Índice VOC",
     "reading.nox": "Índice NOx",
+    "reading.tvoc": "TVOC",
+    "reading.hcho": "Formaldehído",
+    "reading.co": "Monóxido de carbono",
+    "reading.aqi": "Calidad del aire",
+    "reading.battery": "Batería",
+    ...catKeys("pm25who", {
+      good: "Cumple la guía de la OMS", moderate: "Objetivo intermedio 4", usg: "Objetivo intermedio 3",
+      unhealthy: "Objetivo intermedio 2", very_unhealthy: "Objetivo intermedio 1", hazardous: "Supera todos los objetivos",
+    }),
+    ...catKeys("pm10who", {
+      good: "Cumple la guía de la OMS", moderate: "Objetivo intermedio 4", usg: "Objetivo intermedio 3",
+      unhealthy: "Objetivo intermedio 2", very_unhealthy: "Objetivo intermedio 1", hazardous: "Supera todos los objetivos",
+    }),
+    ...catKeys("cowho", {
+      good: "Cumple la guía de la OMS", moderate: "Supera la guía de 24 h de la OMS", usg: "Supera el límite interior de 24 h",
+      unhealthy: "Supera el límite de 8 h", very_unhealthy: "Supera el límite de 1 h", hazardous: "Supera el límite de 15 min",
+    }),
+    ...catKeys("hchowho", { good: "Cumple la guía de la OMS", unhealthy: "Supera la guía de la OMS" }),
+    "attr.pm25who":
+      "Las categorías siguen la guía de la OMS de 2021 para PM2.5 en media de 24 horas (15 µg/m³) y sus objetivos intermedios (25, 37,5, 50 y 75 µg/m³). Los valores de la OMS son medias de 24 horas; la tarjeta compara la lectura actual. Historial registrado por las estadísticas a largo plazo de Home Assistant.",
+    "attr.pm10who":
+      "Las categorías siguen la guía de la OMS de 2021 para PM10 en media de 24 horas (45 µg/m³) y sus objetivos intermedios (50, 75, 100 y 150 µg/m³). Los valores de la OMS son medias de 24 horas; la tarjeta compara la lectura actual. Historial registrado por las estadísticas a largo plazo de Home Assistant.",
+    "tile.aboveGuidelineSub": "Tiempo por encima de la guía de la OMS en las últimas 24 h",
+    "ed.standard": "Escala de colores",
+    "ed.standard.epa": "EPA de EE. UU. (por defecto)",
+    "ed.standard.who": "Guías de la OMS 2021 (PM, CO, formaldehído)",
     "attr.pm25":
       "Las categorías siguen los umbrales de la EPA de EE. UU. para PM2.5 (mayo de 2024). Historial registrado por las estadísticas a largo plazo de Home Assistant.",
     "attr.co2":
@@ -367,7 +496,9 @@ const I18N = {
 
 // Readings whose display name is plain text (the PM/CO₂ names carry <sub>
 // markup and are the same in every language).
-const TRANSLATED_READINGS = new Set(["temperature", "humidity", "voc", "nox"]);
+const TRANSLATED_READINGS = new Set([
+  "temperature", "humidity", "voc", "nox", "tvoc", "hcho", "co", "aqi", "battery",
+]);
 
 /** Dictionary language to use: explicit override, else the Home Assistant UI
  *  language ("es-419" → "es"), else English. */
@@ -450,6 +581,9 @@ class AirQualitySceneCard extends HTMLElement {
         "air-quality-scene-card: 'chips' must be 'auto', 'minimal', or a list of reading keys"
       );
     }
+    if (config.standard != null && !["epa", "who"].includes(config.standard)) {
+      throw new Error("air-quality-scene-card: 'standard' must be 'epa' or 'who'");
+    }
     this._config = config;
     this._statsCacheAt = 0;
     if (this.shadowRoot) this.shadowRoot.innerHTML = "";
@@ -458,8 +592,10 @@ class AirQualitySceneCard extends HTMLElement {
 
   /** The active metric: explicit config, else inferred from the entity, else pm25. */
   _metric() {
-    if (this._config.metric) return METRICS[this._config.metric];
-    return this._metricForEntity(this._config.entity);
+    const base = this._config.metric
+      ? METRICS[this._config.metric]
+      : this._metricForEntity(this._config.entity);
+    return this._applyStandard(base);
   }
 
   /** Infer a headline metric from an entity's device_class, or entity_id for
@@ -489,7 +625,7 @@ class AirQualitySceneCard extends HTMLElement {
    *  (PM1 borrows the PM2.5 scale as a reasonable stand-in). */
   _readingMetric(key) {
     const headline = { co2: "co2", pm25: "pm25", pm10: "pm10", voc: "voc", nox: "nox" }[key];
-    if (headline) return METRICS[headline];
+    if (headline) return this._applyStandard(METRICS[headline]);
     const st = this._related?.[key] && this._hass.states[this._related[key]];
     const unit = esc(st?.attributes?.unit_of_measurement ?? READINGS[key]?.unit ?? "");
     const base = {
@@ -497,12 +633,20 @@ class AirQualitySceneCard extends HTMLElement {
       pm03: { labelHtml: "PM<sub>0.3</sub>", short: "PM0.3", decimals: 0, chartFloor: 0, color: "#5c6bc0" },
       temperature: { labelHtml: this._t("reading.temperature"), short: this._t("reading.temperature"), decimals: 1, chartFloor: 0, color: "#ff8f00" },
       humidity: { labelHtml: this._t("reading.humidity"), short: this._t("reading.humidity"), decimals: 0, chartFloor: 100, color: "#29b6f6" },
+      tvoc: { labelHtml: this._t("reading.tvoc"), short: this._t("reading.tvoc"), decimals: /mg/i.test(unit) ? 3 : 0, chartFloor: 0, color: "#8e24aa" },
+      hcho: { labelHtml: this._t("reading.hcho"), short: this._t("reading.hcho"), decimals: /mg/i.test(unit) ? 3 : 0, chartFloor: 0, color: "#ec407a" },
+      co: { labelHtml: this._t("reading.co"), short: this._t("reading.co"), decimals: 1, chartFloor: 0, color: "#6d4c41" },
+      aqi: { labelHtml: this._t("reading.aqi"), short: this._t("reading.aqi"), decimals: 0, chartFloor: 0, color: "#26a69a" },
+      battery: { labelHtml: this._t("reading.battery"), short: this._t("reading.battery"), decimals: 0, chartFloor: 100, color: "#66bb6a" },
     }[key] ?? { labelHtml: key, short: key, decimals: 0, chartFloor: 0, color: "#607d8b" };
+    const who = this._whoReadingScale(key, unit);
     return {
       key,
       ...base,
       unit,
+      ...(who ? { catScale: who.catScale } : {}),
       categories:
+        who?.categories ??
         base.categories ??
         [{ max: Infinity, label: base.short, color: base.color, mood: "ok", sky: ["#fff", "#fff"], ground: base.color }],
     };
@@ -516,7 +660,7 @@ class AirQualitySceneCard extends HTMLElement {
     const chips = this._config.chips ?? "auto";
     if (Array.isArray(chips)) return chips.filter((k) => k !== metric.key);
     if (chips === "minimal") {
-      return ["temperature", "humidity", metric === METRICS.co2 ? "pm25" : "co2"];
+      return ["temperature", "humidity", metric.key === "co2" ? "pm25" : "co2"];
     }
     return CHIP_ORDER.filter((k) => k !== metric.key);
   }
@@ -570,6 +714,38 @@ class AirQualitySceneCard extends HTMLElement {
     return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
   }
 
+  /** With `standard: who`, PM2.5 / PM10 switch to the WHO scale (no-op otherwise). */
+  _applyStandard(metric) {
+    const w = this._config.standard === "who" ? WHO_SCALES[metric.key] : null;
+    return w ? { ...metric, ...w } : metric;
+  }
+
+  /** WHO scale for the secondary CO / formaldehyde readings, in the sensor's unit. */
+  _whoReadingScale(key, unit) {
+    if (this._config.standard !== "who") return null;
+    const u = normUnit(unit);
+    if (key === "co" && WHO_CO_BY_UNIT[u]) {
+      return { catScale: "cowho", categories: whoScale([...WHO_CO_BY_UNIT[u], Infinity], WHO_CO_LABELS) };
+    }
+    if (key === "hcho" && WHO_HCHO_BY_UNIT[u] != null) {
+      return {
+        catScale: "hchowho",
+        categories: [
+          { ...PM25_CATEGORIES[0], max: WHO_HCHO_BY_UNIT[u], label: "Within WHO guideline" },
+          { ...PM25_CATEGORIES[3], max: Infinity, label: "Above WHO guideline" },
+        ],
+      };
+    }
+    return null;
+  }
+
+  /** Text-valued readings (e.g. an "air quality" word) can't be charted. */
+  _isNumericReading(key) {
+    if (!READINGS[key]?.text) return true;
+    const st = this._hass?.states[this._related?.[key]];
+    return !!st && !isNaN(Number(st.state));
+  }
+
   /** Translated category label (`cat` comes from `metric.categories`). */
   _catLabel(metric, cat) {
     if (!cat?.key) return cat?.label ?? "";
@@ -605,19 +781,34 @@ class AirQualitySceneCard extends HTMLElement {
       const siblings = Object.values(hass.entities).filter(
         (e) => e.device_id === reg.device_id
       );
-      for (const sib of siblings) {
-        if (sib.entity_id === this._config.entity) continue;
-        const st = hass.states[sib.entity_id];
-        if (!st) continue;
-        const dc = st.attributes?.device_class;
-        for (const [key, r] of Object.entries(READINGS)) {
-          if (related[key]) continue;
-          if ((r.dc && dc === r.dc) || (r.idRe && r.idRe.test(sib.entity_id))) {
-            related[key] = sib.entity_id;
-            break;
+      const cands = siblings.filter(
+        (s) =>
+          s.entity_id !== this._config.entity &&
+          // Readings are always sensors; skip number/switch/binary_sensor siblings
+          // (e.g. a "CO₂ alarm threshold" number that shares the device_class).
+          s.entity_id.startsWith("sensor.") &&
+          hass.states[s.entity_id]
+      );
+      const taken = new Set();
+      const assign = (match) => {
+        for (const sib of cands) {
+          if (taken.has(sib.entity_id)) continue;
+          const dc = hass.states[sib.entity_id].attributes?.device_class;
+          for (const [key, r] of Object.entries(READINGS)) {
+            if (related[key]) continue;
+            if (match(r, sib.entity_id, dc)) {
+              related[key] = sib.entity_id;
+              taken.add(sib.entity_id);
+              break;
+            }
           }
         }
-      }
+      };
+      // entity_id first, device_class second: some integrations tag several gases
+      // (formaldehyde, TVOC…) with the same device_class, so the name is the more
+      // reliable discriminator; device_class then fills in whatever is left.
+      assign((r, id) => r.idRe?.test(id));
+      assign((r, id, dc) => r.dc && [].concat(r.dc).includes(dc));
     }
     // Explicit overrides from config always win over discovery.
     for (const key of Object.keys(READINGS)) {
@@ -746,8 +937,17 @@ class AirQualitySceneCard extends HTMLElement {
       .map((key) => {
         const r = READINGS[key];
         const st = r && this._related[key] && hass.states[this._related[key]];
-        if (!st || isNaN(Number(st.state))) return "";
-        return `<span class="chip"><ha-icon icon="${r.icon}"></ha-icon>${this._fmt(Number(st.state), r.digits)}${r.unit}</span>`;
+        if (!st || ["unavailable", "unknown", ""].includes(st.state)) return "";
+        const num = Number(st.state);
+        if (isNaN(num)) {
+          // Text readings (e.g. a qualitative "air quality" label) show as-is.
+          if (!r.text) return "";
+          const txt = this._hass.formatEntityState?.(st) ?? st.state;
+          return `<span class="chip"><ha-icon icon="${r.icon}"></ha-icon>${esc(txt)}</span>`;
+        }
+        const icon = r.iconFn ? r.iconFn(num) : r.icon;
+        const digits = r.digitsFor ? r.digitsFor(st) : r.digits;
+        return `<span class="chip"><ha-icon icon="${icon}"></ha-icon>${this._fmt(num, digits)}${r.unit}</span>`;
       })
       .join("");
 
@@ -808,7 +1008,7 @@ class AirQualitySceneCard extends HTMLElement {
     // expanded view can stack a chart per sensor at the bottom.
     this._relatedIds(hass.states[id]);
     const secKeys = Object.keys(this._related).filter(
-      (k) => k !== "primary" && this._related[k] && this._related[k] !== id
+      (k) => k !== "primary" && this._related[k] && this._related[k] !== id && this._isNumericReading(k)
     );
     const secStats = {};
     await Promise.all(
@@ -828,7 +1028,7 @@ class AirQualitySceneCard extends HTMLElement {
     if (state) this._relatedIds(state);
     // Other discovered readings get their own 24 h chart, stacked below.
     const secKeys = state
-      ? CHIP_ORDER.filter((k) => k !== metric.key && this._related?.[k])
+      ? CHIP_ORDER.filter((k) => k !== metric.key && this._related?.[k] && this._isNumericReading(k))
       : [];
     const value = state ? Number(state.state) : NaN;
     const cat = Number.isNaN(value) ? null : this._categoryFor(value);
@@ -861,7 +1061,7 @@ class AirQualitySceneCard extends HTMLElement {
     const co2AboveTitle = this._t("tile.above", { limit: `${CO2_VENTILATE_PPM} ppm` });
 
     let extraTiles;
-    if (metric === METRICS.co2) {
+    if (metric.key === "co2") {
       // Peak and time-above-threshold over the last 24 h.
       const rows24 = rowsOfLast(fine, 24 * 3600e3);
       const peak24 = rows24.length
@@ -885,7 +1085,7 @@ class AirQualitySceneCard extends HTMLElement {
               this._t("tile.co2AboveSub")
             )
           : pending(co2AboveTitle));
-    } else if (metric === METRICS.pm25) {
+    } else if (metric.key === "pm25") {
       const dailyMeans = stats.daily.filter((r) => r.mean != null);
       const avg30d = dailyMeans.length
         ? dailyMeans.reduce((a, r) => a + r.mean, 0) / dailyMeans.length
@@ -931,7 +1131,7 @@ class AirQualitySceneCard extends HTMLElement {
           ? tile(
               above,
               aboveH < 0.1 ? "0 h" : `${this._fmt(aboveH, 1)} h`,
-              this._t("tile.aboveSub", { range: this._catLabel(metric, metric.categories[0]).toLowerCase() })
+              this._t(metric.who ? "tile.aboveGuidelineSub" : "tile.aboveSub", { range: this._catLabel(metric, metric.categories[0]).toLowerCase() })
             )
           : pending(above));
     }
@@ -973,7 +1173,7 @@ class AirQualitySceneCard extends HTMLElement {
         </div>`;
           })
           .join("")}
-        <div class="attribution">${this._t(`attr.${metric.key}`, undefined, metric.attribution)}</div>
+        <div class="attribution">${this._t(`attr.${metric.attrKey ?? metric.key}`, undefined, metric.attribution)}</div>
       </div>`;
 
     overlay.querySelector(".backdrop").addEventListener("click", () => this._closeOverlay());
@@ -1265,6 +1465,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
           chips_mode: this._t("ed.chipsMode"),
           chips_items: this._t("ed.chipsItems"),
           language: this._t("ed.language"),
+          standard: this._t("ed.standard"),
         };
         if (fixed[s.name]) return fixed[s.name];
         if (READING_LABELS[s.name]) return this._t("ed.readingSensor", { reading: this._t(`reading.${s.name}`, undefined, READING_LABELS[s.name]) });
@@ -1298,6 +1499,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
       entity: cfg.entity,
       name: cfg.name,
       language: cfg.language ?? "auto",
+      standard: cfg.standard ?? "epa",
       chips_mode: mode,
       chips_items: items,
       ...Object.fromEntries(Object.keys(READINGS).map((k) => [k, cfg[k]]).filter(([, v]) => v != null)),
@@ -1327,6 +1529,18 @@ class AirQualitySceneCardEditor extends HTMLElement {
         },
       },
       { name: "name", selector: { text: {} } },
+      {
+        name: "standard",
+        selector: {
+          select: {
+            mode: "dropdown",
+            options: [
+              { value: "epa", label: this._t("ed.standard.epa") },
+              { value: "who", label: this._t("ed.standard.who") },
+            ],
+          },
+        },
+      },
       {
         name: "language",
         selector: {
@@ -1385,6 +1599,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
     const config = { type: "custom:air-quality-scene-card", metric: v.metric, entity: v.entity };
     if (v.name) config.name = v.name;
     if (v.language && v.language !== "auto") config.language = v.language;
+    if (v.standard && v.standard !== "epa") config.standard = v.standard;
 
     if (v.chips_mode === "custom") {
       const list = Array.isArray(v.chips_items)
