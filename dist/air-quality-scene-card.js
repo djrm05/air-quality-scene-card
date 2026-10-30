@@ -544,7 +544,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0-compact.4";
+const CARD_VERSION = "1.4.0-dual.5";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -567,16 +567,16 @@ class AirQualitySceneCard extends HTMLElement {
   }
 
   static async getConfigElement() {
-    return document.createElement("air-quality-scene-card-editor");
+    return document.createElement("air-quality-scene-card-dual-editor");
   }
 
   setConfig(config) {
     if (!config?.entity) {
-      throw new Error("air-quality-scene-card: 'entity' (a PM2.5 or CO₂ sensor) is required");
+      throw new Error("air-quality-scene-card-dual: 'entity' (a PM2.5 or CO₂ sensor) is required");
     }
     if (config.metric && !METRICS[config.metric]) {
       throw new Error(
-        "air-quality-scene-card: 'metric' must be one of: " + Object.keys(METRICS).join(", ")
+        "air-quality-scene-card-dual: 'metric' must be one of: " + Object.keys(METRICS).join(", ")
       );
     }
     if (
@@ -586,23 +586,29 @@ class AirQualitySceneCard extends HTMLElement {
       !Array.isArray(config.chips)
     ) {
       throw new Error(
-        "air-quality-scene-card: 'chips' must be 'auto', 'minimal', or a list of reading keys"
+        "air-quality-scene-card-dual: 'chips' must be 'auto', 'minimal', or a list of reading keys"
       );
     }
     if (config.standard != null && !["epa", "who"].includes(config.standard)) {
-      throw new Error("air-quality-scene-card: 'standard' must be 'epa' or 'who'");
+      throw new Error("air-quality-scene-card-dual: 'standard' must be 'epa' or 'who'");
     }
     if (config.view != null && !["scene", "circle"].includes(config.view)) {
-      throw new Error("air-quality-scene-card: 'view' must be 'scene' or 'circle'");
+      throw new Error("air-quality-scene-card-dual: 'view' must be 'scene' or 'circle'");
     }
     if (config.size != null && (typeof config.size !== "number" ||
         !Number.isFinite(config.size) || config.size < 100 || config.size > 320)) {
-      throw new Error("air-quality-scene-card: 'size' must be a number between 100 and 320 px");
+      throw new Error("air-quality-scene-card-dual: 'size' must be a number between 100 and 320 px");
     }
     this._config = config;
     this._statsCacheAt = 0;
+    this._fingerprint = undefined;
+    this._related = null;
+    this._relatedFor = null;
     if (this.shadowRoot) this.shadowRoot.innerHTML = "";
     this._built = false;
+    // Config changes must render even if the sensor has not changed since
+    // the previous hass assignment (e.g. toggling the layout in the editor).
+    if (this._hass) this.hass = this._hass;
   }
 
   /** The active metric: explicit config, else inferred from the entity, else pm25. */
@@ -1765,7 +1771,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
   /** Translate the editor form's values (which use synthetic chips_mode /
    *  chips_items fields) back into a real card config. */
   _configFromForm(v) {
-    const config = { type: "custom:air-quality-scene-card", metric: v.metric, entity: v.entity };
+    const config = { type: "custom:air-quality-scene-card-dual", metric: v.metric, entity: v.entity };
     if (v.view === "circle") config.view = "circle";
     if (v.size != null) config.size = v.size;
     if (v.name) config.name = v.name;
@@ -1794,11 +1800,11 @@ class AirQualitySceneCardEditor extends HTMLElement {
 // Evaluated twice when loaded both via `frontend: extra_module_url:` and as a
 // HACS Lovelace resource (the ?hacstag= query string makes it a distinct
 // module). Re-defining a tag throws, so guard every registration.
-if (!customElements.get("air-quality-scene-card")) {
-  customElements.define("air-quality-scene-card", AirQualitySceneCard);
+if (!customElements.get("air-quality-scene-card-dual")) {
+  customElements.define("air-quality-scene-card-dual", AirQualitySceneCard);
 }
-if (!customElements.get("air-quality-scene-card-editor")) {
-  customElements.define("air-quality-scene-card-editor", AirQualitySceneCardEditor);
+if (!customElements.get("air-quality-scene-card-dual-editor")) {
+  customElements.define("air-quality-scene-card-dual-editor", AirQualitySceneCardEditor);
 }
 
 window.customCards = window.customCards || [];
@@ -1806,10 +1812,10 @@ const bootLang = resolveLang(
   null,
   document.querySelector("home-assistant")?.hass ?? { language: navigator.language }
 );
-if (!window.customCards.some((c) => c.type === "air-quality-scene-card")) {
+if (!window.customCards.some((c) => c.type === "air-quality-scene-card-dual")) {
   window.customCards.push({
-    type: "air-quality-scene-card",
-    name: "Air Quality Scene Card",
+    type: "air-quality-scene-card-dual",
+    name: "Air Quality Scene Card Dual",
     description: translate(bootLang, "card.description"),
     preview: true,
     documentationURL: "https://github.com/keranm/air-quality-scene-card",
