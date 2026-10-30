@@ -375,6 +375,10 @@ const I18N = {
     "ed.metric": "Primary reading",
     "ed.entity": "Sensor",
     "ed.name": "Name (optional)",
+    "ed.view": "Card layout",
+    "ed.view.scene": "Scene — all readings",
+    "ed.view.circle": "Circle — value and status",
+    "ed.size": "Circle diameter (px)",
     "ed.chipsMode": "Secondary chips",
     "ed.chipsItems": "Readings to show",
     "ed.language": "Language",
@@ -479,6 +483,10 @@ const I18N = {
     "ed.metric": "Lectura principal",
     "ed.entity": "Sensor",
     "ed.name": "Nombre (opcional)",
+    "ed.view": "Diseño de la tarjeta",
+    "ed.view.scene": "Escena — todas las lecturas",
+    "ed.view.circle": "Círculo — valor y estado",
+    "ed.size": "Diámetro del círculo (px)",
     "ed.chipsMode": "Chips secundarios",
     "ed.chipsItems": "Lecturas a mostrar",
     "ed.language": "Idioma",
@@ -536,7 +544,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0-compact.3";
+const CARD_VERSION = "1.4.0-compact.4";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -583,6 +591,13 @@ class AirQualitySceneCard extends HTMLElement {
     }
     if (config.standard != null && !["epa", "who"].includes(config.standard)) {
       throw new Error("air-quality-scene-card: 'standard' must be 'epa' or 'who'");
+    }
+    if (config.view != null && !["scene", "circle"].includes(config.view)) {
+      throw new Error("air-quality-scene-card: 'view' must be 'scene' or 'circle'");
+    }
+    if (config.size != null && (typeof config.size !== "number" ||
+        !Number.isFinite(config.size) || config.size < 100 || config.size > 320)) {
+      throw new Error("air-quality-scene-card: 'size' must be a number between 100 and 320 px");
     }
     this._config = config;
     this._statsCacheAt = 0;
@@ -684,7 +699,7 @@ class AirQualitySceneCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 4;
+    return this._config?.view === "circle" ? Math.ceil((this._config.size ?? 140) / 50) : 4;
   }
 
   /* ------------------------------------------------------------------ */
@@ -828,7 +843,7 @@ class AirQualitySceneCard extends HTMLElement {
     const root = this.shadowRoot ?? this.attachShadow({ mode: "open" });
     root.innerHTML = `
       <style>${AirQualitySceneCard.styles}</style>
-      <ha-card>
+      <ha-card data-view="${this._config.view ?? "scene"}" style="--circle-size:${this._config.size ?? 140}px">
         <div class="scene" role="button" tabindex="0" aria-label="${this._t("aria.scene")}">
           <div class="sky"></div>
           <div class="clouds">
@@ -1464,6 +1479,50 @@ class AirQualitySceneCard extends HTMLElement {
       .cloud, .mascot-badge { animation: none; }
     }
 
+    /* Circular alternative. The scene DOM and expanded detail are shared. */
+    ha-card[data-view="circle"] {
+      background: transparent; border: 0; box-shadow: none; overflow: visible;
+      display: flex; justify-content: center;
+    }
+    ha-card[data-view="circle"] .scene {
+      width: min(100%, var(--circle-size, 140px)); height: auto; aspect-ratio: 1;
+      box-sizing: border-box; flex: none; border: 3px solid var(--cat-color, #888);
+      border-radius: 50%; overflow: hidden; container-type: inline-size;
+    }
+    ha-card[data-view="circle"] .clouds,
+    ha-card[data-view="circle"] .hills,
+    ha-card[data-view="circle"] .mascot-badge,
+    ha-card[data-view="circle"] .strip,
+    ha-card[data-view="circle"] .meta,
+    ha-card[data-view="circle"] .name { display: none; }
+    ha-card[data-view="circle"] .head { position: absolute; inset: 0; padding: 0; display: block; }
+    ha-card[data-view="circle"] .titles { display: contents; }
+    ha-card[data-view="circle"] .pm {
+      position: absolute; top: 29%; left: 7%; right: 7%; display: flex;
+      flex-direction: column; align-items: center; gap: 4px; text-align: center;
+    }
+    ha-card[data-view="circle"] .pm-value {
+      font-size: clamp(24px, 30cqi, 80px); line-height: 1; letter-spacing: -1px;
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+    }
+    ha-card[data-view="circle"] .pm-caption {
+      display: flex; flex-direction: row; align-items: baseline; gap: 3px;
+      font-size: clamp(9px, 8cqi, 18px); line-height: 1.2; font-weight: 500;
+    }
+    ha-card[data-view="circle"] .pm-unit { font-size: inherit; }
+    ha-card[data-view="circle"] .pm-unit:not(:empty)::before { content: "· "; }
+    ha-card[data-view="circle"] .category {
+      position: absolute; top: 72%; left: 10%; right: 10%; padding: 0;
+      max-width: none; min-width: 0; border-radius: 0; background: transparent;
+      text-align: center; white-space: normal; overflow: hidden;
+      font-size: clamp(9px, 8cqi, 17px); line-height: 1.2; font-weight: 600;
+      display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    }
+    ha-card[data-view="circle"] .category::before { width: 5px; height: 5px; margin-right: 4px; }
+    ha-card[data-view="circle"] .scene:focus-visible {
+      outline: 2px solid var(--primary-color, #316b47); outline-offset: 3px;
+    }
+
     /* Expanded sheet */
     .overlay { position: fixed; inset: 0; z-index: 999; }
     .backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
@@ -1558,6 +1617,8 @@ class AirQualitySceneCardEditor extends HTMLElement {
       this._form = document.createElement("ha-form");
       this._form.computeLabel = (s) => {
         const fixed = {
+          view: this._t("ed.view"),
+          size: this._t("ed.size"),
           metric: this._t("ed.metric"),
           entity: this._t("ed.entity"),
           name: this._t("ed.name"),
@@ -1594,6 +1655,8 @@ class AirQualitySceneCardEditor extends HTMLElement {
 
     this._form.hass = this._hass;
     this._form.data = {
+      view: cfg.view ?? "scene",
+      size: cfg.size ?? 140,
       metric,
       entity: cfg.entity,
       name: cfg.name,
@@ -1605,6 +1668,13 @@ class AirQualitySceneCardEditor extends HTMLElement {
     };
 
     const schema = [
+      { name: "view", selector: { select: { mode: "dropdown", options: [
+        { value: "scene", label: this._t("ed.view.scene") },
+        { value: "circle", label: this._t("ed.view.circle") },
+      ] } } },
+      ...(cfg.view === "circle" ? [{ name: "size", selector: {
+        number: { min: 100, max: 320, step: 1, mode: "box", unit_of_measurement: "px" },
+      } }] : []),
       {
         name: "metric",
         selector: {
@@ -1696,6 +1766,8 @@ class AirQualitySceneCardEditor extends HTMLElement {
    *  chips_items fields) back into a real card config. */
   _configFromForm(v) {
     const config = { type: "custom:air-quality-scene-card", metric: v.metric, entity: v.entity };
+    if (v.view === "circle") config.view = "circle";
+    if (v.size != null) config.size = v.size;
     if (v.name) config.name = v.name;
     if (v.language && v.language !== "auto") config.language = v.language;
     if (v.standard && v.standard !== "epa") config.standard = v.standard;
