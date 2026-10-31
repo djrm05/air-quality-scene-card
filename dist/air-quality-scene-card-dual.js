@@ -398,7 +398,7 @@ const I18N = {
     "ed.view": "Card layout",
     "ed.view.scene": "Scene — all readings",
     "ed.view.circle": "Circle — value and status",
-    "ed.view.square": "Square — AQI and CO₂",
+    "ed.view.square": "Square — CO₂ and AQI",
     "square.excellent": "Excellent", "square.good": "Good", "square.moderate": "Moderate",
     "square.poor": "Poor", "square.verypoor": "Very poor", "square.hazardous": "Hazardous",
     "ed.size": "Compact view size (px)",
@@ -515,7 +515,7 @@ const I18N = {
     "ed.view": "Diseño de la tarjeta",
     "ed.view.scene": "Escena — todas las lecturas",
     "ed.view.circle": "Círculo — valor y estado",
-    "ed.view.square": "Cuadrado — AQI y CO₂",
+    "ed.view.square": "Cuadrado — CO₂ y AQI",
     "square.excellent": "Excelente", "square.good": "Buena", "square.moderate": "Moderada",
     "square.poor": "Mala", "square.verypoor": "Muy mala", "square.hazardous": "Peligrosa",
     "ed.size": "Tamaño de la vista compacta (px)",
@@ -576,7 +576,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0-dual.8";
+const CARD_VERSION = "1.4.0-dual.9";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -913,10 +913,11 @@ class AirQualitySceneCard extends HTMLElement {
         <div class="scene" role="button" tabindex="0" aria-label="${this._t("aria.scene")}">
           <div class="sky"></div>
           <div class="square-view">
-            <div class="square-title"></div><div class="square-aqi-label">${esc(this._t("reading.aqi"))}</div>
+            <div class="square-title"></div><div class="square-aqi-label">${esc(this._t("label.co2Level"))}</div>
             <svg class="quality-face" viewBox="0 0 80 80" aria-hidden="true"></svg>
             <div class="square-status"></div>
-            <div class="co2-status"><span class="co2-heading">${esc(this._t("label.co2Level"))}</span><span class="co2-text"></span></div>
+            <div class="square-value"></div>
+            <div class="aqi-summary"><span class="aqi-summary-heading">${esc(this._t("reading.aqi"))}</span><span class="aqi-summary-text"></span></div>
           </div>
           <div class="clouds">
             <div class="cloud c1"></div><div class="cloud c2"></div><div class="cloud c3"></div>
@@ -1088,30 +1089,31 @@ class AirQualitySceneCard extends HTMLElement {
     const root = this.shadowRoot;
     const aqi = this._hass.states[this._related?.aqi];
     const appearance = this._aqiAppearance(aqi);
-    const scene = root.querySelector(".scene");
-    scene.dataset.category = appearance.key;
-    scene.style.setProperty("--cat-color", appearance.color);
-    scene.style.setProperty("--cat-sky-top", appearance.sky[0]);
-    scene.style.setProperty("--cat-sky-bottom", appearance.sky[1]);
-    root.querySelector(".square-title").textContent = this._config.name || this._t("stub.name");
-    root.querySelector(".square-status").textContent = appearance.label;
-    root.querySelector(".square-status").title = appearance.label;
-    root.querySelector(".quality-face").innerHTML = this._qualityFaceSvg(appearance.mood);
     const co2Id = this._config.co2 || (metric.key === "co2" ? this._config.entity : this._related?.co2);
     const co2 = this._hass.states[co2Id];
     const value = Number(co2?.state);
-    const valid = co2 && !["unknown", "unavailable", ""].includes(co2.state) && Number.isFinite(value);
+    const valid = co2 && !["unknown", "unavailable", ""].includes(co2.state) && Number.isFinite(value) && value >= 0;
     const unit = co2?.attributes?.unit_of_measurement;
-    const supported = !unit || String(unit).toLowerCase() === "ppm";
+    const supported = !unit || normUnit(unit) === "ppm";
     const co2Metric = this._applyStandard(METRICS.co2);
     const cat = valid && supported ? this._catForMetric(co2Metric, value) : null;
     const label = cat ? this._catLabel(co2Metric, cat) : this._t("offline");
-    const footer = root.querySelector(".co2-status");
-    footer.style.setProperty("--co2-color", cat?.color ?? "#78909c");
-    footer.style.setProperty("--co2-bg", cat?.sky[0] ?? "#edf1f3");
-    footer.title = `CO₂: ${valid ? `${this._fmt(value, 0)} ${unit || "ppm"} · ` : ""}${label}`;
-    root.querySelector(".co2-text").textContent = label;
-    scene.setAttribute("aria-label", `${name}. AQI: ${appearance.label}. CO₂: ${label}. ${this._t("aria.scene")}`);
+    const scene = root.querySelector(".scene");
+    scene.dataset.category = cat?.key ?? "offline";
+    scene.style.setProperty("--cat-color", cat?.color ?? "#78909c");
+    scene.style.setProperty("--cat-sky-top", cat?.sky[0] ?? "#edf1f3");
+    scene.style.setProperty("--cat-sky-bottom", cat?.sky[1] ?? "#f8fafb");
+    root.querySelector(".square-title").textContent = this._config.name || this._t("stub.name");
+    root.querySelector(".square-status").textContent = label;
+    root.querySelector(".square-status").title = `${this._t("label.co2Level")}: ${label}`;
+    root.querySelector(".square-value").textContent = `${valid ? this._fmt(value, 0) : "–"} ${unit || "ppm"}`;
+    root.querySelector(".quality-face").innerHTML = this._qualityFaceSvg(cat?.mood ?? "ok");
+    const footer = root.querySelector(".aqi-summary");
+    footer.style.setProperty("--aqi-color", appearance.color);
+    footer.style.setProperty("--aqi-bg", appearance.sky[0]);
+    footer.title = `${this._t("reading.aqi")}: ${appearance.label}`;
+    root.querySelector(".aqi-summary-text").textContent = appearance.label;
+    scene.setAttribute("aria-label", `${name}. ${this._t("label.co2Level")}: ${label}, ${valid ? this._fmt(value, 0) : "–"} ${unit || "ppm"}. ${this._t("reading.aqi")}: ${appearance.label}. ${this._t("aria.scene")}`);
   }
 
   /** Compact layout uses real entity units; it never guesses gas concentrations. */
@@ -1695,7 +1697,7 @@ class AirQualitySceneCard extends HTMLElement {
       outline: 2px solid var(--primary-color, #316b47); outline-offset: 3px;
     }
 
-    /* Square AQI summary with an independent, two-line CO2 indicator. */
+    /* Square CO2 state first; smaller ppm value and independent AQI footer. */
     ha-card[data-view="square"] {
       display: flex; justify-content: center; background: transparent;
       box-shadow: none; border: 0; overflow: visible;
@@ -1713,28 +1715,34 @@ class AirQualitySceneCard extends HTMLElement {
     ha-card[data-view="square"] .clouds,
     ha-card[data-view="square"] .hills { display: none; }
     ha-card[data-view="square"] .square-view {
-      position: absolute; inset: 0; display: flex; flex-direction: column;
-      align-items: center; box-sizing: border-box; padding: 5% 4% 4%; color: #172b25;
+      position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: 8% 6% 22% 30% 10% 24%;
+      justify-items: center; align-items: center; box-sizing: border-box;
+      padding: 5% 4% 4%; color: #172b25;
     }
-    .square-title { max-width: 100%; font-size: clamp(8px, 7cqi, 18px);
-      line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-    .square-aqi-label { font-size: clamp(8px, 5.5cqi, 14px); line-height: 1.15; opacity: .65; margin-top: 1%; }
-    .quality-face { width: 34%; height: auto; flex: none; margin-top: 2%;
-      color: var(--cat-color, #78909c); fill: none; stroke: currentColor;
-      stroke-width: 5; stroke-linecap: round; }
+    .square-title { max-width: 100%; font-size: clamp(7px, 7cqi, 18px);
+      line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+    .square-aqi-label { font-size: clamp(7px, 5.5cqi, 14px); line-height: 1; opacity: .7; }
+    .quality-face { width: 24%; height: 100%; color: var(--cat-color, #78909c);
+      fill: none; stroke: currentColor; stroke-width: 5; stroke-linecap: round; }
     .quality-face .face-eye { fill: currentColor; stroke: none; }
-    .square-status { max-width: 100%; min-height: 1.1em; margin-top: 1%;
-      font-size: clamp(10px, 12cqi, 32px); line-height: 1.1; font-weight: 750;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
-    .co2-status { width: 100%; min-height: 24%; margin-top: auto; padding: 3% 2%;
-      box-sizing: border-box; border-radius: 12px; background: var(--co2-bg, #edf1f3);
-      color: #24352e; display: flex; flex-direction: column; justify-content: center;
-      align-items: center; gap: 1px; text-align: center; }
-    .co2-heading { font-size: clamp(8px, 5.5cqi, 14px); line-height: 1.1; font-weight: 600; }
-    .co2-heading::before { content: ""; display: inline-block; width: .65em; height: .65em;
-      border-radius: 50%; margin-right: 4px; background: var(--co2-color, #78909c); }
-    .co2-text { font-size: clamp(8px, 6.4cqi, 17px); line-height: 1.15;
-      font-weight: 600; max-width: 100%; overflow-wrap: anywhere; }
+    .square-status { width: 100%; height: 100%; margin: 0;
+      font-size: clamp(12px, 12.5cqi, 34px); line-height: 1.05; font-weight: 750;
+      white-space: normal; overflow-wrap: normal; overflow: hidden; text-align: center;
+      display: flex; align-items: center; justify-content: center; }
+    .square-value { max-width: 100%; font-size: clamp(9px, 8cqi, 20px); line-height: 1.1;
+      font-weight: 550; color: #43514b; font-variant-numeric: tabular-nums;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .aqi-summary { width: 100%; height: 100%; padding: 2% 3%; box-sizing: border-box;
+      border-radius: 10px; background: var(--aqi-bg, #edf1f3); color: #24352e;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      gap: 1px; text-align: center; min-width: 0; }
+    .aqi-summary-heading { max-width: 100%; font-size: clamp(6px, 5.5cqi, 14px);
+      line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .aqi-summary-heading::before { content: ""; display: inline-block; width: .65em; height: .65em;
+      border-radius: 50%; margin-right: 4px; background: var(--aqi-color, #78909c); }
+    .aqi-summary-text { font-size: clamp(8px, 7cqi, 18px); line-height: 1.1; font-weight: 700;
+      max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     ha-card[data-view="square"] .scene:focus-visible {
       outline: 2px solid var(--primary-color, #316b47); outline-offset: 3px;
     }
