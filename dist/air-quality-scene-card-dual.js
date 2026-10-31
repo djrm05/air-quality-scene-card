@@ -576,7 +576,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0-dual.12";
+const CARD_VERSION = "1.4.0-dual.14";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -922,7 +922,7 @@ class AirQualitySceneCard extends HTMLElement {
 
   _watchSquareSize() {
     this._squareResizeObserver?.disconnect();
-    if (this._config?.view !== "square" || typeof ResizeObserver !== "function") return;
+    if (this._config?.view === "circle" || typeof ResizeObserver !== "function") return;
     const scene = this.shadowRoot?.querySelector(".scene");
     if (!scene) return;
     this._squareResizeObserver = new ResizeObserver(() => this._scheduleSquareTextFit());
@@ -930,7 +930,7 @@ class AirQualitySceneCard extends HTMLElement {
   }
 
   _scheduleSquareTextFit() {
-    if (this._config?.view !== "square" || typeof requestAnimationFrame !== "function") return;
+    if (this._config?.view === "circle" || typeof requestAnimationFrame !== "function") return;
     if (this._squareFitFrame != null) cancelAnimationFrame(this._squareFitFrame);
     this._squareFitFrame = requestAnimationFrame(() => {
       this._squareFitFrame = null;
@@ -939,7 +939,7 @@ class AirQualitySceneCard extends HTMLElement {
   }
 
   _fitSquareText() {
-    const status = this.shadowRoot?.querySelector(".square-status");
+    const status = this.shadowRoot?.querySelector(this._config?.view === "square" ? ".square-status" : ".pm-value");
     if (!status || !this.isConnected || !status.clientWidth) return;
     status.style.fontSize = "";
     const base = parseFloat(getComputedStyle(status).fontSize);
@@ -961,6 +961,14 @@ class AirQualitySceneCard extends HTMLElement {
       <ha-card data-view="${this._config.view ?? "scene"}" style="--circle-size:${this._config.size ?? (this._config.view === "square" ? 160 : 140)}px">
         <div class="scene" role="button" tabindex="0" aria-label="${this._t("aria.scene")}">
           <div class="sky"></div>
+          <div class="state-atmosphere" aria-hidden="true">
+            <svg class="state-breeze" viewBox="0 0 500 100" preserveAspectRatio="none">
+              <path class="breeze-path breeze-one" d="M-100 25 C-50 10 10 40 80 24 S190 10 255 24 S355 40 430 24 S530 10 610 24"/>
+              <path class="breeze-path breeze-two" d="M-120 58 C-30 36 20 76 110 57 S215 36 295 57 S405 76 480 57 S570 36 650 57"/>
+              <path class="breeze-path breeze-three" d="M-80 82 C-10 66 30 95 105 81 S225 66 300 81 S410 95 490 81 S580 66 660 81"/>
+            </svg>
+            <div class="state-mist mist-one"></div><div class="state-mist mist-two"></div>
+          </div>
           <div class="square-view">
             <div class="square-header"><div class="square-title"></div><div class="square-aqi-label">${esc(this._t("label.co2Level"))}</div></div>
             <div class="square-main">
@@ -983,7 +991,7 @@ class AirQualitySceneCard extends HTMLElement {
               <div class="name"></div>
               <div class="category"></div>
             </div>
-            <div class="mascot-badge"><svg class="mascot" viewBox="0 0 80 80"></svg></div>
+            <div class="mascot-badge"><svg class="mascot ${((this._config.view ?? "scene") === "scene") ? "scene-face" : ""}" viewBox="0 0 80 80"></svg></div>
           </div>
           <div class="pm"><b class="pm-value"></b><span class="pm-caption"><span class="pm-label"></span><span class="pm-unit"></span></span></div>
           <div class="meta"></div>
@@ -1062,8 +1070,9 @@ class AirQualitySceneCard extends HTMLElement {
     if (!state || ["unavailable", "unknown", ""].includes(state.state) || !Number.isFinite(Number(state.state))) {
       scene.dataset.category = "offline";
       root.querySelector(".category").textContent = `${this._mShort(metric)} · ${this._t("offline")}`;
-      root.querySelector(".pm-value").textContent = "–";
-      root.querySelector(".mascot").innerHTML = this._mascotSvg("ok");
+      this._renderPrimaryReading(metric, null, null);
+      root.querySelector(".mascot").innerHTML = (this._config.view ?? "scene") === "scene"
+        ? this._qualityFaceSvg("ok") : this._mascotSvg("ok");
       this._renderCompactReadings(metric);
       if (!root.querySelector(".overlay").hidden) this._renderOverlay();
       return;
@@ -1077,12 +1086,29 @@ class AirQualitySceneCard extends HTMLElement {
     scene.style.setProperty("--cat-sky-bottom", cat.sky[1]);
     scene.style.setProperty("--cat-ground", cat.ground);
     root.querySelector(".category").textContent = `${this._mShort(metric)} · ${this._catLabel(metric, cat)}`;
-    root.querySelector(".pm-value").textContent = this._fmt(value, metric.decimals);
-    root.querySelector(".mascot").innerHTML = this._mascotSvg(cat.mood);
+    this._renderPrimaryReading(metric, value, cat);
+    root.querySelector(".mascot").innerHTML = (this._config.view ?? "scene") === "scene"
+      ? this._qualityFaceSvg(cat.mood) : this._mascotSvg(cat.mood);
 
     this._renderCompactReadings(metric);
 
     if (!root.querySelector(".overlay").hidden) this._renderOverlay();
+  }
+
+  _renderPrimaryReading(metric, value, cat) {
+    const root = this.shadowRoot;
+    const numeric = value == null ? "–" : this._fmt(value, metric.decimals);
+    const label = cat ? this._catLabel(metric, cat) : this._t("offline");
+    const sceneView = (this._config.view ?? "scene") === "scene";
+    root.querySelector(".pm-value").textContent = sceneView ? label : numeric;
+    if (sceneView) {
+      root.querySelector(".pm-label").textContent = `${this._mShort(metric)} · ${numeric} ${metric.unit}`.trim();
+      root.querySelector(".pm-unit").textContent = "";
+      root.querySelector(".pm-value").title = label;
+      this._scheduleSquareTextFit();
+    }
+    root.querySelector(".scene").setAttribute("aria-label",
+      `${this._mShort(metric)}: ${label}, ${numeric} ${metric.unit}. ${this._t("aria.scene")}`);
   }
 
   /** Only recognised device labels drive the AQI colour. No numeric scale is assumed. */
@@ -1705,6 +1731,95 @@ class AirQualitySceneCard extends HTMLElement {
     }
 
     .square-view { display: none; }
+
+    /* Rectangular view: state first, smaller measurement directly below. */
+    ha-card[data-view="scene"] .category { display: none; }
+    ha-card[data-view="scene"] .pm {
+      top: 43px; right: 45%; flex-direction: column; align-items: flex-start; gap: 3px;
+    }
+    ha-card[data-view="scene"] .pm-value {
+      display: block; width: 100%; max-width: 100%; font-size: clamp(20px, 6cqi, 34px);
+      line-height: 1.1; letter-spacing: -.4px; white-space: nowrap; overflow: hidden;
+    }
+    ha-card[data-view="scene"] .pm-caption {
+      flex-direction: row; font-size: 12px; font-weight: 550; line-height: 1.4;
+      color: #43514b; white-space: nowrap;
+    }
+
+    ha-card[data-view="scene"] .mascot-badge {
+      width: 48px; height: 48px; border: 0; background: transparent; animation: none;
+    }
+    ha-card[data-view="scene"] .scene-face {
+      width: 48px; height: 48px; fill: none; stroke: currentColor; stroke-width: 5;
+      stroke-linecap: round; color: var(--cat-color, #78909c);
+    }
+    ha-card[data-view="scene"] .scene-face .face-eye { fill: currentColor; stroke: none; }
+    ha-card[data-view="scene"] .scene[data-category="offline"] .scene-face { color: #78909c; }
+
+    ha-card[data-view="scene"] .scene-face,
+    ha-card[data-view="square"] .quality-face {
+      animation: face-float 5s ease-in-out infinite;
+      transform-origin: center;
+    }
+    ha-card[data-view="scene"] .scene-face .face-eye,
+    ha-card[data-view="square"] .quality-face .face-eye {
+      animation: face-blink 6.4s linear infinite;
+      transform-box: fill-box; transform-origin: center;
+    }
+    @keyframes face-float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-2px); }
+    }
+    @keyframes face-blink {
+      0%, 42%, 46%, 100% { transform: scaleY(1); }
+      43%, 45% { transform: scaleY(.1); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      ha-card[data-view="scene"] .scene-face,
+      ha-card[data-view="scene"] .scene-face .face-eye,
+      ha-card[data-view="square"] .quality-face,
+      ha-card[data-view="square"] .quality-face .face-eye { animation: none; }
+    }
+
+    ha-card[data-view="scene"] .clouds { display: none; }
+    /* Background atmosphere is symbolic of CO2 ventilation, not visible CO2. */
+    .state-atmosphere { display: none; }
+    ha-card[data-view="scene"] .state-atmosphere {
+      display: block; position: absolute; inset: 36px 0 81px; overflow: hidden;
+      pointer-events: none; opacity: .95;
+    }
+    ha-card[data-view="square"] .state-atmosphere {
+      display: block; position: absolute; inset: 15% 0 20%; overflow: hidden;
+      pointer-events: none; opacity: .95;
+    }
+    .state-breeze { position: absolute; inset: 0; width: 100%; height: 100%;
+      overflow: visible; display: none; }
+    .breeze-path { fill: none; stroke: var(--cat-color); stroke-width: 2.2;
+      stroke-linecap: round; stroke-dasharray: 60 110; opacity: .48;
+      animation: scene-breeze 7s linear infinite; }
+    .breeze-two { animation-delay: -2s; stroke-width: 1.8; opacity: .35; }
+    .breeze-three { animation-delay: -4s; opacity: .28; }
+    .scene[data-category="good"] .state-breeze,
+    .scene[data-category="moderate"] .state-breeze { display: block; }
+    .scene[data-category="moderate"] .breeze-path { animation-duration: 11s; opacity: .32; }
+    .state-mist { display: none; position: absolute; left: -10%; width: 120%;
+      height: 120%; bottom: -30%; border-radius: 50%;
+      background: radial-gradient(ellipse at center, color-mix(in srgb, var(--cat-color) 40%, transparent), transparent 72%);
+      animation: scene-mist 9s ease-in-out infinite alternate; }
+    .mist-two { left: -40%; bottom: 2%; animation-delay: -5s; opacity: .65; }
+    .scene[data-category="usg"] .state-mist,
+    .scene[data-category="unhealthy"] .state-mist,
+    .scene[data-category="very_unhealthy"] .state-mist,
+    .scene[data-category="hazardous"] .state-mist { display: block; }
+    .scene[data-category="usg"] .state-mist { opacity: .8; }
+    @keyframes scene-breeze { to { stroke-dashoffset: -340; } }
+    @keyframes scene-mist {
+      from { transform: translateX(-12%) scale(.92); }
+      to { transform: translateX(20%) scale(1.12); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .breeze-path, .state-mist { animation: none; }
+    }
 
     /* Circular alternative. The scene DOM and expanded detail are shared. */
     ha-card[data-view="circle"] {
