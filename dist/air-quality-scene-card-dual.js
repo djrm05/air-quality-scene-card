@@ -576,7 +576,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0-dual.15";
+const CARD_VERSION = "1.4.0-dual.16";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -925,7 +925,10 @@ class AirQualitySceneCard extends HTMLElement {
     if (this._config?.view === "circle" || typeof ResizeObserver !== "function") return;
     const scene = this.shadowRoot?.querySelector(".scene");
     if (!scene) return;
-    this._squareResizeObserver = new ResizeObserver(() => this._scheduleSquareTextFit());
+    this._squareResizeObserver = new ResizeObserver(() => {
+      this._protectFaceArea();
+      this._scheduleSquareTextFit();
+    });
     this._squareResizeObserver.observe(scene);
   }
 
@@ -935,7 +938,33 @@ class AirQualitySceneCard extends HTMLElement {
     this._squareFitFrame = requestAnimationFrame(() => {
       this._squareFitFrame = null;
       this._fitSquareText();
+      this._protectFaceArea();
     });
+  }
+
+  _protectFaceArea() {
+    if (!this.isConnected || this._config?.view === "circle") return;
+    const atmosphere = this.shadowRoot?.querySelector(".state-atmosphere");
+    const face = this.shadowRoot?.querySelector(this._config?.view === "square" ? ".quality-face" : ".scene-face");
+    if (!atmosphere || !face) return;
+    const area = atmosphere.getBoundingClientRect();
+    const icon = face.getBoundingClientRect();
+    if (!area.width || !area.height || !icon.width || !icon.height) return;
+    // Includes the complete face SVG plus a 10px margin, larger than its 2px float.
+    const gap = 10;
+    const left = Math.max(0, icon.left - area.left - gap);
+    const right = Math.min(area.width, icon.right - area.left + gap);
+    const top = Math.max(0, icon.top - area.top - gap);
+    const bottom = Math.min(area.height, icon.bottom - area.top + gap);
+    if (left < right && top < bottom) {
+      const path = `path(evenodd, "M0 0 H${area.width} V${area.height} H0 Z M${left} ${top} H${right} V${bottom} H${left} Z")`;
+      atmosphere.style.clipPath = typeof CSS !== "undefined" && CSS.supports("clip-path", path)
+        ? path
+        : `inset(${Math.max(0, Math.min(area.height, bottom))}px 0 0 0)`;
+    } else {
+      atmosphere.style.clipPath = "none";
+    }
+    atmosphere.style.visibility = "visible";
   }
 
   _fitSquareText() {
@@ -1783,7 +1812,7 @@ class AirQualitySceneCard extends HTMLElement {
 
     ha-card[data-view="scene"] .clouds { display: none; }
     /* Background atmosphere is symbolic of CO2 ventilation, not visible CO2. */
-    .state-atmosphere { display: none; }
+    .state-atmosphere { display: none; visibility: hidden; }
     ha-card[data-view="scene"] .state-atmosphere {
       display: block; position: absolute; inset: 36px 0 81px; overflow: hidden;
       pointer-events: none; opacity: .95;
