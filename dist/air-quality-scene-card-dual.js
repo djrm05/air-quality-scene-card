@@ -192,6 +192,20 @@ const WHO_CO_BY_UNIT = {
 const WHO_HCHO_BY_UNIT = { "mg/m3": 0.1, "ug/m3": 100, ppm: 0.08, ppb: 80 };
 const normUnit = (u) => String(u ?? "").replace(/[µμ]/g, "u").replace(/³/g, "3").replace(/\s/g, "").toLowerCase();
 
+// Manufacturer table supplied by the user, not a claim of standards certification.
+// Continue immediately above each upper bound; the printed table has gaps.
+const DEVICE_LIMITS = {
+  aqi: { unit: "", maxes: [50, 100, 250] },
+  co2: { unit: "ppm", maxes: [699, 999, 1599] },
+  hcho: { unit: "mg/m3", maxes: [0.08, 0.1, 0.3] },
+  tvoc: { unit: "mg/m3", maxes: [0.5, 1, 1.6] },
+  co: { unit: "ppm", maxes: [30, 50, 160] },
+  pm25: { unit: "ug/m3", maxes: [35, 75, 115] },
+  pm10: { unit: "ug/m3", maxes: [50, 150, 250] },
+  pm1: { unit: "ug/m3", maxes: [15, 35, 75] },
+  pm03: { unit: "ug/m3", maxes: [100, 1000, 10000] },
+};
+
 // Every secondary reading the card can discover on the same device and show as
 // a chip. `dc` is the Home Assistant device_class when the platform sets one;
 // `idRe` matches the entity_id for readings that carry none (VOC/NOx indices
@@ -307,6 +321,8 @@ const I18N = {
     "reading.temperature": "Temperature",
     "reading.humidity": "Humidity",
     "reading.co2": "CO₂",
+    "label.co2Level": "CO₂ level",
+    "label.independent": "Device AQI and CO₂ level are independent indicators; they may report different states.",
     "reading.pm25": "PM2.5",
     "reading.pm1": "PM1",
     "reading.pm10": "PM10",
@@ -316,7 +332,7 @@ const I18N = {
     "reading.tvoc": "TVOC",
     "reading.hcho": "Formaldehyde",
     "reading.co": "Carbon monoxide",
-    "reading.aqi": "Air quality",
+    "reading.aqi": "Device AQI",
     "reading.battery": "Battery",
     ...catKeys("pm25who", {
       good: "Within WHO guideline", moderate: "Interim target 4", usg: "Interim target 3",
@@ -337,6 +353,10 @@ const I18N = {
       "Categories follow the WHO 2021 air quality guideline for 24-hour mean PM10 (45 µg/m³) and its interim targets (50, 75, 100 and 150 µg/m³). WHO values are 24-hour means; the card compares the current reading. History recorded by Home Assistant's long-term statistics.",
     "tile.aboveGuidelineSub": "Time above the WHO guideline in the last 24 h",
     "ed.standard": "Colour scale",
+    "device.unsupported": "No compatible scale for this unit",
+    "ed.standard.device": "Device manual — four colour bands",
+    "attr.device": "Colours follow the device table supplied by the user. Gaps in the printed ranges are continued immediately above each upper bound. Mass-concentration limits are converted to the entity's unit. This profile is not independent verification of the standards cited by the manufacturer.",
+    ...catKeys("device", { good: "Low", moderate: "Moderate", usg: "Elevated", unhealthy: "High" }),
     "ed.standard.epa": "US EPA (default)",
     "ed.standard.who": "WHO 2021 guidelines (PM, CO, formaldehyde)",
     "attr.pm25":
@@ -378,7 +398,10 @@ const I18N = {
     "ed.view": "Card layout",
     "ed.view.scene": "Scene — all readings",
     "ed.view.circle": "Circle — value and status",
-    "ed.size": "Circle diameter (px)",
+    "ed.view.square": "Square — AQI and CO₂",
+    "square.excellent": "Excellent", "square.good": "Good", "square.moderate": "Moderate",
+    "square.poor": "Poor", "square.verypoor": "Very poor", "square.hazardous": "Hazardous",
+    "ed.size": "Compact view size (px)",
     "ed.chipsMode": "Secondary chips",
     "ed.chipsItems": "Readings to show",
     "ed.language": "Language",
@@ -415,6 +438,8 @@ const I18N = {
     "reading.temperature": "Temperatura",
     "reading.humidity": "Humedad",
     "reading.co2": "CO₂",
+    "label.co2Level": "Nivel de CO₂",
+    "label.independent": "El AQI del dispositivo y el nivel de CO₂ son indicadores independientes y pueden mostrar estados distintos.",
     "reading.pm25": "PM2.5",
     "reading.pm1": "PM1",
     "reading.pm10": "PM10",
@@ -424,7 +449,7 @@ const I18N = {
     "reading.tvoc": "TVOC",
     "reading.hcho": "Formaldehído",
     "reading.co": "Monóxido de carbono",
-    "reading.aqi": "Calidad del aire",
+    "reading.aqi": "AQI del dispositivo",
     "reading.battery": "Batería",
     ...catKeys("pm25who", {
       good: "Cumple la guía de la OMS", moderate: "Objetivo intermedio 4", usg: "Objetivo intermedio 3",
@@ -445,6 +470,10 @@ const I18N = {
       "Las categorías siguen la guía de la OMS de 2021 para PM10 en media de 24 horas (45 µg/m³) y sus objetivos intermedios (50, 75, 100 y 150 µg/m³). Los valores de la OMS son medias de 24 horas; la tarjeta compara la lectura actual. Historial registrado por las estadísticas a largo plazo de Home Assistant.",
     "tile.aboveGuidelineSub": "Tiempo por encima de la guía de la OMS en las últimas 24 h",
     "ed.standard": "Escala de colores",
+    "device.unsupported": "Sin escala compatible con esta unidad",
+    "ed.standard.device": "Manual del dispositivo — cuatro colores",
+    "attr.device": "Colores según la tabla del dispositivo facilitada por el usuario. Los huecos de los rangos impresos se completan por encima del límite anterior. Los límites de concentración másica se convierten a la unidad de la entidad. Este perfil no verifica de forma independiente las normas citadas por el fabricante.",
+    ...catKeys("device", { good: "Bajo", moderate: "Moderado", usg: "Elevado", unhealthy: "Alto" }),
     "ed.standard.epa": "EPA de EE. UU. (por defecto)",
     "ed.standard.who": "Guías de la OMS 2021 (PM, CO, formaldehído)",
     "attr.pm25":
@@ -486,7 +515,10 @@ const I18N = {
     "ed.view": "Diseño de la tarjeta",
     "ed.view.scene": "Escena — todas las lecturas",
     "ed.view.circle": "Círculo — valor y estado",
-    "ed.size": "Diámetro del círculo (px)",
+    "ed.view.square": "Cuadrado — AQI y CO₂",
+    "square.excellent": "Excelente", "square.good": "Buena", "square.moderate": "Moderada",
+    "square.poor": "Mala", "square.verypoor": "Muy mala", "square.hazardous": "Peligrosa",
+    "ed.size": "Tamaño de la vista compacta (px)",
     "ed.chipsMode": "Chips secundarios",
     "ed.chipsItems": "Lecturas a mostrar",
     "ed.language": "Idioma",
@@ -544,7 +576,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0-dual.5";
+const CARD_VERSION = "1.4.0-dual.8";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -589,11 +621,11 @@ class AirQualitySceneCard extends HTMLElement {
         "air-quality-scene-card-dual: 'chips' must be 'auto', 'minimal', or a list of reading keys"
       );
     }
-    if (config.standard != null && !["epa", "who"].includes(config.standard)) {
-      throw new Error("air-quality-scene-card-dual: 'standard' must be 'epa' or 'who'");
+    if (config.standard != null && !["epa", "who", "device"].includes(config.standard)) {
+      throw new Error("air-quality-scene-card-dual: 'standard' must be 'epa', 'who' or 'device'");
     }
-    if (config.view != null && !["scene", "circle"].includes(config.view)) {
-      throw new Error("air-quality-scene-card-dual: 'view' must be 'scene' or 'circle'");
+    if (config.view != null && !["scene", "circle", "square"].includes(config.view)) {
+      throw new Error("air-quality-scene-card-dual: 'view' must be 'scene', 'circle' or 'square'");
     }
     if (config.size != null && (typeof config.size !== "number" ||
         !Number.isFinite(config.size) || config.size < 100 || config.size > 320)) {
@@ -616,7 +648,8 @@ class AirQualitySceneCard extends HTMLElement {
     const base = this._config.metric
       ? METRICS[this._config.metric]
       : this._metricForEntity(this._config.entity);
-    return this._applyStandard(base);
+    const unit = this._hass?.states[this._config.entity]?.attributes?.unit_of_measurement;
+    return this._applyStandard(this._config.standard === "device" && unit != null ? { ...base, unit } : base);
   }
 
   /** Infer a headline metric from an entity's device_class, or entity_id for
@@ -646,8 +679,12 @@ class AirQualitySceneCard extends HTMLElement {
    *  (PM1 borrows the PM2.5 scale as a reasonable stand-in). */
   _readingMetric(key) {
     const headline = { co2: "co2", pm25: "pm25", pm10: "pm10", voc: "voc", nox: "nox" }[key];
-    if (headline) return this._applyStandard(METRICS[headline]);
     const st = this._related?.[key] && this._hass.states[this._related[key]];
+    if (headline) {
+      const metric = METRICS[headline];
+      return this._applyStandard(this._config.standard === "device"
+        ? { ...metric, unit: st?.attributes?.unit_of_measurement ?? metric.unit } : metric);
+    }
     const unit = esc(st?.attributes?.unit_of_measurement ?? READINGS[key]?.unit ?? "");
     const base = {
       pm1: { labelHtml: "PM<sub>1</sub>", short: "PM1", decimals: 0, chartFloor: 5, categories: PM25_CATEGORIES, catScale: "pm25" },
@@ -660,7 +697,7 @@ class AirQualitySceneCard extends HTMLElement {
       aqi: { labelHtml: this._t("reading.aqi"), short: this._t("reading.aqi"), decimals: 0, chartFloor: 0, color: "#26a69a" },
       battery: { labelHtml: this._t("reading.battery"), short: this._t("reading.battery"), decimals: 0, chartFloor: 100, color: "#66bb6a" },
     }[key] ?? { labelHtml: key, short: key, decimals: 0, chartFloor: 0, color: "#607d8b" };
-    const who = this._whoReadingScale(key, unit);
+    const who = this._deviceReadingScale(key, unit) ?? this._whoReadingScale(key, unit);
     return {
       key,
       ...base,
@@ -692,12 +729,10 @@ class AirQualitySceneCard extends HTMLElement {
     const state = hass.states[this._config.entity];
     // Re-render when the primary reading changes, or when any discovered chip
     // value changes (they update together on each device poll).
-    const relSig = state
-      ? this._relatedIds(state).map((id) => hass.states[id]?.state).join()
-      : "";
+    const relSig = this._relatedIds(state).map((id) => hass.states[id]?.state).join();
     const fingerprint = state
       ? `${state.state}|${state.last_updated}|${relSig}`
-      : "missing";
+      : `missing|${relSig}`;
     if (fingerprint !== this._fingerprint) {
       this._fingerprint = fingerprint;
       this._update();
@@ -705,7 +740,8 @@ class AirQualitySceneCard extends HTMLElement {
   }
 
   getCardSize() {
-    return this._config?.view === "circle" ? Math.ceil((this._config.size ?? 140) / 50) : 4;
+    return ["circle", "square"].includes(this._config?.view)
+      ? Math.ceil((this._config.size ?? (this._config.view === "square" ? 160 : 140)) / 50) : 4;
   }
 
   /* ------------------------------------------------------------------ */
@@ -737,8 +773,32 @@ class AirQualitySceneCard extends HTMLElement {
 
   /** With `standard: who`, PM2.5 / PM10 switch to the WHO scale (no-op otherwise). */
   _applyStandard(metric) {
+    const device = this._deviceReadingScale(metric.key, metric.unit);
+    if (device) return { ...metric, ...device, who: false };
     const w = this._config.standard === "who" ? WHO_SCALES[metric.key] : null;
     return w ? { ...metric, ...w } : metric;
+  }
+
+  _deviceReadingScale(key, unit) {
+    if (this._config.standard !== "device") return null;
+    const def = DEVICE_LIMITS[key];
+    if (!def) return null;
+    const u = normUnit(unit);
+    let factor = 1;
+    if (u !== def.unit) {
+      if (def.unit === "mg/m3" && u === "ug/m3") factor = 1000;
+      else if (def.unit === "ug/m3" && u === "mg/m3") factor = 0.001;
+      else return { attrKey: "device", categories: [{ max: Infinity, key: "unclassified",
+        label: this._t("device.unsupported"), color: "#78909c", mood: "ok",
+        sky: ["#edf1f3", "#f8fafb"], ground: "#b0bec5" }] };
+      // No guess for gas volume/mass or particle-count conversions.
+    }
+    const source = [PM25_CATEGORIES[0], PM25_CATEGORIES[1], PM25_CATEGORIES[2], PM25_CATEGORIES[3]];
+    return {
+      catScale: key === "co2" ? "co2" : "device", attrKey: "device",
+      categories: [...def.maxes.map((v) => Number((v * factor).toPrecision(12))), Infinity]
+        .map((max, i) => ({ ...source[i], max })),
+    };
   }
 
   /** WHO scale for the secondary CO / formaldehyde readings, in the sensor's unit. */
@@ -849,9 +909,15 @@ class AirQualitySceneCard extends HTMLElement {
     const root = this.shadowRoot ?? this.attachShadow({ mode: "open" });
     root.innerHTML = `
       <style>${AirQualitySceneCard.styles}</style>
-      <ha-card data-view="${this._config.view ?? "scene"}" style="--circle-size:${this._config.size ?? 140}px">
+      <ha-card data-view="${this._config.view ?? "scene"}" style="--circle-size:${this._config.size ?? (this._config.view === "square" ? 160 : 140)}px">
         <div class="scene" role="button" tabindex="0" aria-label="${this._t("aria.scene")}">
           <div class="sky"></div>
+          <div class="square-view">
+            <div class="square-title"></div><div class="square-aqi-label">${esc(this._t("reading.aqi"))}</div>
+            <svg class="quality-face" viewBox="0 0 80 80" aria-hidden="true"></svg>
+            <div class="square-status"></div>
+            <div class="co2-status"><span class="co2-heading">${esc(this._t("label.co2Level"))}</span><span class="co2-text"></span></div>
+          </div>
           <div class="clouds">
             <div class="cloud c1"></div><div class="cloud c2"></div><div class="cloud c3"></div>
           </div>
@@ -933,9 +999,16 @@ class AirQualitySceneCard extends HTMLElement {
     root.querySelector(".pm-label").innerHTML = this._mHtml(metric);
     root.querySelector(".pm-unit").textContent = metric.unit;
 
+    if (this._config.view === "square") {
+      this._renderCompactReadings(metric);
+      this._renderSquare(name, metric);
+      if (!root.querySelector(".overlay").hidden) this._renderOverlay();
+      return;
+    }
+
     if (!state || ["unavailable", "unknown", ""].includes(state.state) || !Number.isFinite(Number(state.state))) {
       scene.dataset.category = "offline";
-      root.querySelector(".category").textContent = this._t("offline");
+      root.querySelector(".category").textContent = `${this._mShort(metric)} · ${this._t("offline")}`;
       root.querySelector(".pm-value").textContent = "–";
       root.querySelector(".mascot").innerHTML = this._mascotSvg("ok");
       this._renderCompactReadings(metric);
@@ -950,13 +1023,95 @@ class AirQualitySceneCard extends HTMLElement {
     scene.style.setProperty("--cat-sky-top", cat.sky[0]);
     scene.style.setProperty("--cat-sky-bottom", cat.sky[1]);
     scene.style.setProperty("--cat-ground", cat.ground);
-    root.querySelector(".category").textContent = this._catLabel(metric, cat);
+    root.querySelector(".category").textContent = `${this._mShort(metric)} · ${this._catLabel(metric, cat)}`;
     root.querySelector(".pm-value").textContent = this._fmt(value, metric.decimals);
     root.querySelector(".mascot").innerHTML = this._mascotSvg(cat.mood);
 
     this._renderCompactReadings(metric);
 
     if (!root.querySelector(".overlay").hidden) this._renderOverlay();
+  }
+
+  /** Only recognised device labels drive the AQI colour. No numeric scale is assumed. */
+  _aqiAppearance(state) {
+    const neutral = { color: "#78909c", sky: ["#edf1f3", "#f8fafb"], mood: "ok" };
+    if (!state || ["unavailable", "unknown", ""].includes(state.state)) {
+      return { ...neutral, label: this._t("offline"), key: "offline" };
+    }
+    const numeric = Number(state.state);
+    if (this._config.standard === "device" && Number.isFinite(numeric) && numeric >= 0) {
+      const scale = this._deviceReadingScale("aqi", "");
+      const cat = this._catForMetric(scale, numeric);
+      return { key: cat.key, color: cat.color, sky: cat.sky, mood: cat.mood, label: this._fmt(numeric, 0) };
+    }
+    const palettes = [
+      ["excellent", "#159447", "#e8faec", "#d8f5df", "happy"],
+      ["good", "#008f83", "#e7faf5", "#d6f3ed", "happy"],
+      ["moderate", "#cf9700", "#fff9e5", "#fff0c5", "ok"],
+      ["poor", "#ec6b06", "#fff3e8", "#ffe4cd", "meh"],
+      ["verypoor", "#d32f49", "#fff0f2", "#ffdde3", "sad"],
+      ["hazardous", "#8e24aa", "#f6eefa", "#ecdafa", "sad"],
+    ];
+    const aliases = [
+      ["excellent", "excelente", "excellent air quality"],
+      ["good", "buena", "bueno", "bien", "clean", "fresh"],
+      ["moderate", "moderada", "moderado", "fair", "normal", "acceptable", "aceptable"],
+      ["poor", "bad", "mala", "malo", "unhealthy"],
+      ["very poor", "very bad", "muy mala", "muy malo", "very unhealthy"],
+      ["hazardous", "dangerous", "peligrosa", "peligroso", "severe"],
+    ];
+    const normalise = (v) => String(v).normalize("NFD").replace(/\p{Diacritic}/gu, "")
+      .toLowerCase().replace(/[_-]+/g, " ").trim();
+    const formatted = this._hass.formatEntityState?.(state) ?? state.state;
+    const candidates = [normalise(state.state), normalise(formatted)];
+    const tier = aliases.findIndex((list) => list.some((alias) => candidates.includes(alias)));
+    if (tier < 0) return { ...neutral, key: "unclassified", label: String(formatted) };
+    if (this._config.standard === "device") {
+      const band = [0, 0, 1, 2, 3, 3][tier];
+      const cat = this._deviceReadingScale("aqi", "").categories[band];
+      return { key: cat.key, color: cat.color, sky: cat.sky, mood: cat.mood,
+        label: this._t(`square.${palettes[tier][0]}`) };
+    }
+    const [key, color, top, bottom, mood] = palettes[tier];
+    return { key, color, sky: [top, bottom], mood, label: this._t(`square.${key}`) };
+  }
+
+  _qualityFaceSvg(mood) {
+    const mouths = { happy: "M25 45 Q40 63 55 45", ok: "M27 49 L53 49",
+      meh: "M26 54 Q40 42 54 54", sad: "M24 55 Q40 36 56 55" };
+    return `<circle cx="40" cy="40" r="34"/><circle class="face-eye" cx="28" cy="32" r="3"/>
+      <circle class="face-eye" cx="52" cy="32" r="3"/><path d="${mouths[mood] ?? mouths.ok}"/>
+      ${mood === "sad" ? '<path d="M22 22 L31 26 M49 26 L58 22"/>' : ""}`;
+  }
+
+  _renderSquare(name, metric) {
+    const root = this.shadowRoot;
+    const aqi = this._hass.states[this._related?.aqi];
+    const appearance = this._aqiAppearance(aqi);
+    const scene = root.querySelector(".scene");
+    scene.dataset.category = appearance.key;
+    scene.style.setProperty("--cat-color", appearance.color);
+    scene.style.setProperty("--cat-sky-top", appearance.sky[0]);
+    scene.style.setProperty("--cat-sky-bottom", appearance.sky[1]);
+    root.querySelector(".square-title").textContent = this._config.name || this._t("stub.name");
+    root.querySelector(".square-status").textContent = appearance.label;
+    root.querySelector(".square-status").title = appearance.label;
+    root.querySelector(".quality-face").innerHTML = this._qualityFaceSvg(appearance.mood);
+    const co2Id = this._config.co2 || (metric.key === "co2" ? this._config.entity : this._related?.co2);
+    const co2 = this._hass.states[co2Id];
+    const value = Number(co2?.state);
+    const valid = co2 && !["unknown", "unavailable", ""].includes(co2.state) && Number.isFinite(value);
+    const unit = co2?.attributes?.unit_of_measurement;
+    const supported = !unit || String(unit).toLowerCase() === "ppm";
+    const co2Metric = this._applyStandard(METRICS.co2);
+    const cat = valid && supported ? this._catForMetric(co2Metric, value) : null;
+    const label = cat ? this._catLabel(co2Metric, cat) : this._t("offline");
+    const footer = root.querySelector(".co2-status");
+    footer.style.setProperty("--co2-color", cat?.color ?? "#78909c");
+    footer.style.setProperty("--co2-bg", cat?.sky[0] ?? "#edf1f3");
+    footer.title = `CO₂: ${valid ? `${this._fmt(value, 0)} ${unit || "ppm"} · ` : ""}${label}`;
+    root.querySelector(".co2-text").textContent = label;
+    scene.setAttribute("aria-label", `${name}. AQI: ${appearance.label}. CO₂: ${label}. ${this._t("aria.scene")}`);
   }
 
   /** Compact layout uses real entity units; it never guesses gas concentrations. */
@@ -969,7 +1124,7 @@ class AirQualitySceneCard extends HTMLElement {
       const st = r && this._hass.states[this._related[key]];
       if (!st) continue;
       const label = this._t(`reading.${key}`, undefined, READING_LABELS[key] ?? key);
-      const short = { voc: "VOC", nox: "NOx", hcho: "HCHO", co: "CO" }[key] ?? label;
+      const short = { aqi: "AQI", voc: "VOC", nox: "NOx", hcho: "HCHO", co: "CO" }[key] ?? label;
       const missing = ["unavailable", "unknown", ""].includes(st.state);
       const num = Number(st.state);
       const numeric = !missing && Number.isFinite(num);
@@ -980,7 +1135,7 @@ class AirQualitySceneCard extends HTMLElement {
       const unit = numeric ? (st.attributes?.unit_of_measurement ?? r.unit) : "";
       const icon = numeric && r.iconFn ? r.iconFn(num) : r.icon;
       const description = `${label}: ${value}${unit ? ` ${unit}` : ""}`;
-      const html = `<span class="chip" title="${esc(description)}" aria-label="${esc(description)}">
+      const html = `<span class="chip" data-reading="${esc(key)}" title="${esc(description)}" aria-label="${esc(description)}">
         <ha-icon icon="${esc(icon)}" aria-hidden="true"></ha-icon>
         <span class="chip-content"><span class="chip-label">${esc(short)}</span>
         <span class="chip-reading">${esc(value)}<small>${esc(unit)}</small></span></span></span>`;
@@ -1098,7 +1253,8 @@ class AirQualitySceneCard extends HTMLElement {
       </div>`;
     const pending = (title) => tile(title, "…", this._t("tile.pending"));
     const peakTitle = this._t("tile.peak");
-    const co2AboveTitle = this._t("tile.above", { limit: `${CO2_VENTILATE_PPM} ppm` });
+    const co2Limit = this._config.standard === "device" ? metric.categories[0].max : CO2_VENTILATE_PPM;
+    const co2AboveTitle = this._t("tile.above", { limit: `${co2Limit} ppm` });
 
     let extraTiles;
     if (metric.key === "co2") {
@@ -1108,7 +1264,7 @@ class AirQualitySceneCard extends HTMLElement {
         ? Math.max(...rows24.map((r) => r.max ?? r.mean))
         : null;
       const rowMs = stats.short.length ? 5 * 60e3 : 3600e3;
-      const aboveMs = rows24.filter((r) => r.mean > CO2_VENTILATE_PPM).length * rowMs;
+      const aboveMs = rows24.filter((r) => r.mean > co2Limit).length * rowMs;
       const aboveH = aboveMs / 3600e3;
       extraTiles =
         (peak24 == null
@@ -1122,10 +1278,12 @@ class AirQualitySceneCard extends HTMLElement {
           ? tile(
               co2AboveTitle,
               aboveH < 0.1 ? "0 h" : `${this._fmt(aboveH, 1)} h`,
-              this._t("tile.co2AboveSub")
+              this._config.standard === "device"
+                ? this._t("tile.aboveSub", { range: this._catLabel(metric, metric.categories[0]) })
+                : this._t("tile.co2AboveSub")
             )
           : pending(co2AboveTitle));
-    } else if (metric.key === "pm25") {
+    } else if (metric.key === "pm25" && this._config.standard !== "device") {
       const dailyMeans = stats.daily.filter((r) => r.mean != null);
       const avg30d = dailyMeans.length
         ? dailyMeans.reduce((a, r) => a + r.mean, 0) / dailyMeans.length
@@ -1176,6 +1334,8 @@ class AirQualitySceneCard extends HTMLElement {
           : pending(above));
     }
 
+    const aqiState = this._hass.states[this._related?.aqi];
+    const aqiAppearance = this._aqiAppearance(aqiState);
     overlay.innerHTML = `
       <div class="backdrop"></div>
       <div class="sheet" role="dialog" aria-label="${this._t("aria.sheet", { name })}">
@@ -1184,10 +1344,14 @@ class AirQualitySceneCard extends HTMLElement {
           <svg class="mascot big" viewBox="0 0 80 80">${this._mascotSvg(cat?.mood ?? "ok")}</svg>
           <div>
             <div class="sheet-name">${name}</div>
-            <div class="sheet-cat">${cat ? this._catLabel(metric, cat) : this._t("offline")}</div>
+            <div class="sheet-cat">${esc(this._mShort(metric))} · ${cat ? this._catLabel(metric, cat) : this._t("offline")}</div>
             <div class="sheet-pm">${this._mHtml(metric)} <b>${this._fmt(value, metric.decimals)}</b> ${metric.unit}</div>
           </div>
         </div>
+        ${aqiState ? `<div class="aqi-detail" style="--aqi-color:${aqiAppearance.color}">
+          <b>${esc(this._t("reading.aqi"))}</b>: ${esc(aqiAppearance.label)}
+        </div>` : ""}
+        ${metric.key === "co2" ? `<p class="reading-note">${esc(this._t("label.independent"))}</p>` : ""}
         <div class="tiles">
           ${tile(this._t("tile.last24"), avg24 == null ? "…" : `${this._fmt(avg24, metric.decimals)} ${metric.unit}`.trim(), this._t("tile.average", { metric: this._mShort(metric) }))}
           ${tile(this._t("tile.last12"), avg12 == null ? "…" : `${this._fmt(avg12, metric.decimals)} ${metric.unit}`.trim(), this._t("tile.average", { metric: this._mShort(metric) }))}
@@ -1485,6 +1649,8 @@ class AirQualitySceneCard extends HTMLElement {
       .cloud, .mascot-badge { animation: none; }
     }
 
+    .square-view { display: none; }
+
     /* Circular alternative. The scene DOM and expanded detail are shared. */
     ha-card[data-view="circle"] {
       background: transparent; border: 0; box-shadow: none; overflow: visible;
@@ -1528,6 +1694,56 @@ class AirQualitySceneCard extends HTMLElement {
     ha-card[data-view="circle"] .scene:focus-visible {
       outline: 2px solid var(--primary-color, #316b47); outline-offset: 3px;
     }
+
+    /* Square AQI summary with an independent, two-line CO2 indicator. */
+    ha-card[data-view="square"] {
+      display: flex; justify-content: center; background: transparent;
+      box-shadow: none; border: 0; overflow: visible;
+    }
+    ha-card[data-view="square"] .scene {
+      width: min(100%, var(--circle-size, 160px)); height: auto; aspect-ratio: 1;
+      flex: none; box-sizing: border-box; border: 2px solid var(--cat-color, #78909c);
+      border-radius: 12%; overflow: hidden; container-type: inline-size;
+      box-shadow: 0 0 10px color-mix(in srgb, var(--cat-color, #78909c) 25%, transparent);
+    }
+    ha-card[data-view="square"] .head,
+    ha-card[data-view="square"] .pm,
+    ha-card[data-view="square"] .meta,
+    ha-card[data-view="square"] .strip,
+    ha-card[data-view="square"] .clouds,
+    ha-card[data-view="square"] .hills { display: none; }
+    ha-card[data-view="square"] .square-view {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; box-sizing: border-box; padding: 5% 4% 4%; color: #172b25;
+    }
+    .square-title { max-width: 100%; font-size: clamp(8px, 7cqi, 18px);
+      line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+    .square-aqi-label { font-size: clamp(8px, 5.5cqi, 14px); line-height: 1.15; opacity: .65; margin-top: 1%; }
+    .quality-face { width: 34%; height: auto; flex: none; margin-top: 2%;
+      color: var(--cat-color, #78909c); fill: none; stroke: currentColor;
+      stroke-width: 5; stroke-linecap: round; }
+    .quality-face .face-eye { fill: currentColor; stroke: none; }
+    .square-status { max-width: 100%; min-height: 1.1em; margin-top: 1%;
+      font-size: clamp(10px, 12cqi, 32px); line-height: 1.1; font-weight: 750;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+    .co2-status { width: 100%; min-height: 24%; margin-top: auto; padding: 3% 2%;
+      box-sizing: border-box; border-radius: 12px; background: var(--co2-bg, #edf1f3);
+      color: #24352e; display: flex; flex-direction: column; justify-content: center;
+      align-items: center; gap: 1px; text-align: center; }
+    .co2-heading { font-size: clamp(8px, 5.5cqi, 14px); line-height: 1.1; font-weight: 600; }
+    .co2-heading::before { content: ""; display: inline-block; width: .65em; height: .65em;
+      border-radius: 50%; margin-right: 4px; background: var(--co2-color, #78909c); }
+    .co2-text { font-size: clamp(8px, 6.4cqi, 17px); line-height: 1.15;
+      font-weight: 600; max-width: 100%; overflow-wrap: anywhere; }
+    ha-card[data-view="square"] .scene:focus-visible {
+      outline: 2px solid var(--primary-color, #316b47); outline-offset: 3px;
+    }
+
+    /* Keep the AQI reading explicitly identified in both rectangular metadata
+       and the expanded detail, independently of the primary sensor state. */
+    .meta .chip[data-reading="aqi"] .chip-label { display: block; font-size: 8px; line-height: 9px; }
+    .aqi-detail { border-left: 3px solid var(--aqi-color, #78909c); padding: 6px 9px; margin: 8px 0; }
+    .reading-note { color: var(--secondary-text-color, #666); font-size: .75rem; line-height: 1.4; margin: 6px 0 12px; }
 
     /* Expanded sheet */
     .overlay { position: fixed; inset: 0; z-index: 999; }
@@ -1662,7 +1878,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
     this._form.hass = this._hass;
     this._form.data = {
       view: cfg.view ?? "scene",
-      size: cfg.size ?? 140,
+      size: cfg.size ?? (cfg.view === "square" ? 160 : 140),
       metric,
       entity: cfg.entity,
       name: cfg.name,
@@ -1677,8 +1893,9 @@ class AirQualitySceneCardEditor extends HTMLElement {
       { name: "view", selector: { select: { mode: "dropdown", options: [
         { value: "scene", label: this._t("ed.view.scene") },
         { value: "circle", label: this._t("ed.view.circle") },
+        { value: "square", label: this._t("ed.view.square") },
       ] } } },
-      ...(cfg.view === "circle" ? [{ name: "size", selector: {
+      ...(["circle", "square"].includes(cfg.view) ? [{ name: "size", selector: {
         number: { min: 100, max: 320, step: 1, mode: "box", unit_of_measurement: "px" },
       } }] : []),
       {
@@ -1712,6 +1929,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
             options: [
               { value: "epa", label: this._t("ed.standard.epa") },
               { value: "who", label: this._t("ed.standard.who") },
+              { value: "device", label: this._t("ed.standard.device") },
             ],
           },
         },
@@ -1743,6 +1961,10 @@ class AirQualitySceneCardEditor extends HTMLElement {
       },
     ];
 
+    if (cfg.view === "square") {
+      schema.push({ name: "aqi", selector: { entity: { domain: "sensor" } } });
+      schema.push({ name: "co2", selector: { entity: { domain: "sensor", device_class: "carbon_dioxide" } } });
+    }
     if (mode === "custom") {
       // Tick which readings to show…
       schema.push({
@@ -1757,6 +1979,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
       });
       // …then assign a sensor to each ticked one (blank = auto-detect from the device).
       for (const k of items) {
+        if (cfg.view === "square" && ["aqi", "co2"].includes(k)) continue;
         const dc = READINGS[k]?.dc;
         schema.push({
           name: k,
@@ -1772,7 +1995,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
    *  chips_items fields) back into a real card config. */
   _configFromForm(v) {
     const config = { type: "custom:air-quality-scene-card-dual", metric: v.metric, entity: v.entity };
-    if (v.view === "circle") config.view = "circle";
+    if (["circle", "square"].includes(v.view)) config.view = v.view;
     if (v.size != null) config.size = v.size;
     if (v.name) config.name = v.name;
     if (v.language && v.language !== "auto") config.language = v.language;
