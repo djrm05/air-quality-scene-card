@@ -576,7 +576,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0-dual.9";
+const CARD_VERSION = "1.4.0-dual.12";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -904,6 +904,55 @@ class AirQualitySceneCard extends HTMLElement {
   /* DOM                                                                  */
   /* ------------------------------------------------------------------ */
 
+  connectedCallback() {
+    this._watchSquareSize();
+    this._scheduleSquareTextFit();
+    document.fonts?.ready?.then(() => {
+      if (this.isConnected) this._scheduleSquareTextFit();
+    });
+  }
+
+  disconnectedCallback() {
+    this._squareResizeObserver?.disconnect();
+    if (this._squareFitFrame != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(this._squareFitFrame);
+      this._squareFitFrame = null;
+    }
+  }
+
+  _watchSquareSize() {
+    this._squareResizeObserver?.disconnect();
+    if (this._config?.view !== "square" || typeof ResizeObserver !== "function") return;
+    const scene = this.shadowRoot?.querySelector(".scene");
+    if (!scene) return;
+    this._squareResizeObserver = new ResizeObserver(() => this._scheduleSquareTextFit());
+    this._squareResizeObserver.observe(scene);
+  }
+
+  _scheduleSquareTextFit() {
+    if (this._config?.view !== "square" || typeof requestAnimationFrame !== "function") return;
+    if (this._squareFitFrame != null) cancelAnimationFrame(this._squareFitFrame);
+    this._squareFitFrame = requestAnimationFrame(() => {
+      this._squareFitFrame = null;
+      this._fitSquareText();
+    });
+  }
+
+  _fitSquareText() {
+    const status = this.shadowRoot?.querySelector(".square-status");
+    if (!status || !this.isConnected || !status.clientWidth) return;
+    status.style.fontSize = "";
+    const base = parseFloat(getComputedStyle(status).fontSize);
+    const range = document.createRange();
+    range.selectNodeContents(status);
+    const measured = range.getBoundingClientRect().width;
+    const available = Math.max(0, status.clientWidth - 4);
+    if (measured > available && measured > 0) {
+      status.style.fontSize = `${Math.floor(base * available / measured * 10) / 10}px`;
+    }
+    range.detach();
+  }
+
   _build() {
     this._built = true;
     const root = this.shadowRoot ?? this.attachShadow({ mode: "open" });
@@ -913,10 +962,12 @@ class AirQualitySceneCard extends HTMLElement {
         <div class="scene" role="button" tabindex="0" aria-label="${this._t("aria.scene")}">
           <div class="sky"></div>
           <div class="square-view">
-            <div class="square-title"></div><div class="square-aqi-label">${esc(this._t("label.co2Level"))}</div>
-            <svg class="quality-face" viewBox="0 0 80 80" aria-hidden="true"></svg>
-            <div class="square-status"></div>
-            <div class="square-value"></div>
+            <div class="square-header"><div class="square-title"></div><div class="square-aqi-label">${esc(this._t("label.co2Level"))}</div></div>
+            <div class="square-main">
+              <svg class="quality-face" viewBox="0 0 80 80" aria-hidden="true"></svg>
+              <div class="square-status"></div>
+              <div class="square-value"></div>
+            </div>
             <div class="aqi-summary"><span class="aqi-summary-heading">${esc(this._t("reading.aqi"))}</span><span class="aqi-summary-text"></span></div>
           </div>
           <div class="clouds">
@@ -963,6 +1014,7 @@ class AirQualitySceneCard extends HTMLElement {
         </g>`
       )
       .join("");
+    this._watchSquareSize();
   }
 
   _mascotSvg(mood) {
@@ -1105,6 +1157,7 @@ class AirQualitySceneCard extends HTMLElement {
     scene.style.setProperty("--cat-sky-bottom", cat?.sky[1] ?? "#f8fafb");
     root.querySelector(".square-title").textContent = this._config.name || this._t("stub.name");
     root.querySelector(".square-status").textContent = label;
+    this._scheduleSquareTextFit();
     root.querySelector(".square-status").title = `${this._t("label.co2Level")}: ${label}`;
     root.querySelector(".square-value").textContent = `${valid ? this._fmt(value, 0) : "–"} ${unit || "ppm"}`;
     root.querySelector(".quality-face").innerHTML = this._qualityFaceSvg(cat?.mood ?? "ok");
@@ -1706,7 +1759,7 @@ class AirQualitySceneCard extends HTMLElement {
       width: min(100%, var(--circle-size, 160px)); height: auto; aspect-ratio: 1;
       flex: none; box-sizing: border-box; border: 2px solid var(--cat-color, #78909c);
       border-radius: 12%; overflow: hidden; container-type: inline-size;
-      box-shadow: 0 0 10px color-mix(in srgb, var(--cat-color, #78909c) 25%, transparent);
+      box-shadow: none;
     }
     ha-card[data-view="square"] .head,
     ha-card[data-view="square"] .pm,
@@ -1716,24 +1769,27 @@ class AirQualitySceneCard extends HTMLElement {
     ha-card[data-view="square"] .hills { display: none; }
     ha-card[data-view="square"] .square-view {
       position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: 8% 6% 22% 30% 10% 24%;
-      justify-items: center; align-items: center; box-sizing: border-box;
-      padding: 5% 4% 4%; color: #172b25;
+      grid-template-rows: auto minmax(0, 1fr) auto; gap: 2cqi;
+      justify-items: center; box-sizing: border-box; padding: 5% 4%; color: #172b25;
     }
-    .square-title { max-width: 100%; font-size: clamp(7px, 7cqi, 18px);
-      line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-    .square-aqi-label { font-size: clamp(7px, 5.5cqi, 14px); line-height: 1; opacity: .7; }
-    .quality-face { width: 24%; height: 100%; color: var(--cat-color, #78909c);
-      fill: none; stroke: currentColor; stroke-width: 5; stroke-linecap: round; }
+    .square-header { width: 100%; text-align: center; min-width: 0; }
+    .square-title { max-width: 100%; font-size: clamp(7px, 6cqi, 18px);
+      line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+    .square-aqi-label { font-size: clamp(7px, 4.8cqi, 14px); line-height: 1.1; opacity: .7; }
+    .square-main { width: 100%; min-height: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 1cqi; }
+    .quality-face { width: 25cqi; height: 25cqi; flex: none;
+      color: var(--cat-color, #78909c); fill: none; stroke: currentColor;
+      stroke-width: 5; stroke-linecap: round; }
     .quality-face .face-eye { fill: currentColor; stroke: none; }
-    .square-status { width: 100%; height: 100%; margin: 0;
-      font-size: clamp(12px, 12.5cqi, 34px); line-height: 1.05; font-weight: 750;
-      white-space: normal; overflow-wrap: normal; overflow: hidden; text-align: center;
+    .square-status { width: 100%; height: 12cqi; flex: none; margin: 0;
+      font-size: clamp(10px, 10.5cqi, 30px); line-height: 1.05; font-weight: 750;
+      white-space: nowrap; overflow-wrap: normal; overflow: hidden; text-align: center;
       display: flex; align-items: center; justify-content: center; }
-    .square-value { max-width: 100%; font-size: clamp(9px, 8cqi, 20px); line-height: 1.1;
+    .square-value { max-width: 100%; flex: none; font-size: clamp(8px, 7.5cqi, 20px); line-height: 1.1;
       font-weight: 550; color: #43514b; font-variant-numeric: tabular-nums;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .aqi-summary { width: 100%; height: 100%; padding: 2% 3%; box-sizing: border-box;
+    .aqi-summary { width: 100%; padding: 1.25cqi 3%; box-sizing: border-box;
       border-radius: 10px; background: var(--aqi-bg, #edf1f3); color: #24352e;
       display: flex; flex-direction: column; justify-content: center; align-items: center;
       gap: 1px; text-align: center; min-width: 0; }
