@@ -576,7 +576,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0-dual.14";
+const CARD_VERSION = "1.4.0-dual.15";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -1820,6 +1820,17 @@ class AirQualitySceneCard extends HTMLElement {
     @media (prefers-reduced-motion: reduce) {
       .breeze-path, .state-mist { animation: none; }
     }
+
+    /* Explicit layers: animated transforms must never paint above content. */
+    ha-card:is([data-view="scene"], [data-view="square"]) .scene { isolation: isolate; }
+    ha-card:is([data-view="scene"], [data-view="square"]) .sky { z-index: 0; }
+    ha-card:is([data-view="scene"], [data-view="square"]) .state-atmosphere,
+    ha-card:is([data-view="scene"], [data-view="square"]) .hills { z-index: 1; }
+    ha-card:is([data-view="scene"], [data-view="square"]) .head,
+    ha-card:is([data-view="scene"], [data-view="square"]) .pm,
+    ha-card:is([data-view="scene"], [data-view="square"]) .meta,
+    ha-card:is([data-view="scene"], [data-view="square"]) .strip,
+    ha-card:is([data-view="scene"], [data-view="square"]) .square-view { z-index: 2; }
 
     /* Circular alternative. The scene DOM and expanded detail are shared. */
     ha-card[data-view="circle"] {
