@@ -353,6 +353,8 @@ const I18N = {
       "Categories follow the WHO 2021 air quality guideline for 24-hour mean PM10 (45 µg/m³) and its interim targets (50, 75, 100 and 150 µg/m³). WHO values are 24-hour means; the card compares the current reading. History recorded by Home Assistant's long-term statistics.",
     "tile.aboveGuidelineSub": "Time above the WHO guideline in the last 24 h",
     "ed.standard": "Colour scale",
+    "chart.noThresholds": "No classification thresholds for this reading",
+    "chart.deviceSource": "Ranges from the device manual",
     "device.unsupported": "No compatible scale for this unit",
     "ed.standard.device": "Device manual — four colour bands",
     "attr.device": "Colours follow the device table supplied by the user. Gaps in the printed ranges are continued immediately above each upper bound. Mass-concentration limits are converted to the entity's unit. This profile is not independent verification of the standards cited by the manufacturer.",
@@ -395,6 +397,9 @@ const I18N = {
     "ed.metric": "Primary reading",
     "ed.entity": "Sensor",
     "ed.name": "Name (optional)",
+    "ed.tapMode": "Tap action",
+    "ed.tap.detail": "Open detail",
+    "ed.tap.none": "Do nothing",
     "ed.view": "Card layout",
     "ed.view.scene": "Scene — all readings",
     "ed.view.circle": "Circle — value and status",
@@ -470,6 +475,8 @@ const I18N = {
       "Las categorías siguen la guía de la OMS de 2021 para PM10 en media de 24 horas (45 µg/m³) y sus objetivos intermedios (50, 75, 100 y 150 µg/m³). Los valores de la OMS son medias de 24 horas; la tarjeta compara la lectura actual. Historial registrado por las estadísticas a largo plazo de Home Assistant.",
     "tile.aboveGuidelineSub": "Tiempo por encima de la guía de la OMS en las últimas 24 h",
     "ed.standard": "Escala de colores",
+    "chart.noThresholds": "Sin umbrales de clasificación para esta lectura",
+    "chart.deviceSource": "Rangos del manual del dispositivo",
     "device.unsupported": "Sin escala compatible con esta unidad",
     "ed.standard.device": "Manual del dispositivo — cuatro colores",
     "attr.device": "Colores según la tabla del dispositivo facilitada por el usuario. Los huecos de los rangos impresos se completan por encima del límite anterior. Los límites de concentración másica se convierten a la unidad de la entidad. Este perfil no verifica de forma independiente las normas citadas por el fabricante.",
@@ -512,6 +519,9 @@ const I18N = {
     "ed.metric": "Lectura principal",
     "ed.entity": "Sensor",
     "ed.name": "Nombre (opcional)",
+    "ed.tapMode": "Acción al pulsar",
+    "ed.tap.detail": "Abrir detalle",
+    "ed.tap.none": "No hacer nada",
     "ed.view": "Diseño de la tarjeta",
     "ed.view.scene": "Escena — todas las lecturas",
     "ed.view.circle": "Círculo — valor y estado",
@@ -576,7 +586,7 @@ const formatNumber = (v, digits = 1, locale = "en", fixed = false) => {
   }
 };
 
-const CARD_VERSION = "1.4.0-dual.16";
+const CARD_VERSION = "1.4.0-dual.19";
 
 
 /** Escape a value for interpolation into markup. Entity friendly_name and the
@@ -697,12 +707,15 @@ class AirQualitySceneCard extends HTMLElement {
       aqi: { labelHtml: this._t("reading.aqi"), short: this._t("reading.aqi"), decimals: 0, chartFloor: 0, color: "#26a69a" },
       battery: { labelHtml: this._t("reading.battery"), short: this._t("reading.battery"), decimals: 0, chartFloor: 100, color: "#66bb6a" },
     }[key] ?? { labelHtml: key, short: key, decimals: 0, chartFloor: 0, color: "#607d8b" };
-    const who = this._deviceReadingScale(key, unit) ?? this._whoReadingScale(key, unit);
+    // EPA does not define TVOC/HCHO/CO/etc. in this card. Use the supplied
+    // device table when no selected-profile scale exists, rather than one colour.
+    const who = this._deviceReadingScale(key, unit) ?? this._whoReadingScale(key, unit)
+      ?? this._deviceReadingScale(key, unit, true);
     return {
       key,
       ...base,
       unit,
-      ...(who ? { catScale: who.catScale } : {}),
+      ...(who ? { catScale: who.catScale, attrKey: who.attrKey } : {}),
       categories:
         who?.categories ??
         base.categories ??
@@ -779,8 +792,8 @@ class AirQualitySceneCard extends HTMLElement {
     return w ? { ...metric, ...w } : metric;
   }
 
-  _deviceReadingScale(key, unit) {
-    if (this._config.standard !== "device") return null;
+  _deviceReadingScale(key, unit, fallback = false) {
+    if (!fallback && this._config.standard !== "device") return null;
     const def = DEVICE_LIMITS[key];
     if (!def) return null;
     const u = normUnit(unit);
@@ -904,6 +917,14 @@ class AirQualitySceneCard extends HTMLElement {
   /* DOM                                                                  */
   /* ------------------------------------------------------------------ */
 
+  _detailEnabled() {
+    return this._config?.tap_action?.action !== "none";
+  }
+
+  _interactionHint() {
+    return this._detailEnabled() ? this._t("aria.scene") : "";
+  }
+
   connectedCallback() {
     this._watchSquareSize();
     this._scheduleSquareTextFit();
@@ -950,20 +971,25 @@ class AirQualitySceneCard extends HTMLElement {
     const area = atmosphere.getBoundingClientRect();
     const icon = face.getBoundingClientRect();
     if (!area.width || !area.height || !icon.width || !icon.height) return;
-    // Includes the complete face SVG plus a 10px margin, larger than its 2px float.
-    const gap = 10;
-    const left = Math.max(0, icon.left - area.left - gap);
-    const right = Math.min(area.width, icon.right - area.left + gap);
-    const top = Math.max(0, icon.top - area.top - gap);
-    const bottom = Math.min(area.height, icon.bottom - area.top + gap);
-    if (left < right && top < bottom) {
-      const path = `path(evenodd, "M0 0 H${area.width} V${area.height} H0 Z M${left} ${top} H${right} V${bottom} H${left} Z")`;
-      atmosphere.style.clipPath = typeof CSS !== "undefined" && CSS.supports("clip-path", path)
-        ? path
-        : `inset(${Math.max(0, Math.min(area.height, bottom))}px 0 0 0)`;
-    } else {
-      atmosphere.style.clipPath = "none";
+    // Fully transparent core covers the complete SVG, its corners and float.
+    // Fade only outside that protected core, avoiding a visible rectangular cutout.
+    const centerX = icon.left + icon.width / 2 - area.left;
+    const centerY = icon.top + icon.height / 2 - area.top;
+    const radius = Math.hypot(icon.width, icon.height) / 2 + 10;
+    const fade = 18;
+    const mask = `radial-gradient(circle at ${centerX}px ${centerY}px, transparent 0px, transparent ${radius}px, #000 ${radius + fade}px)`;
+    atmosphere.style.clipPath = "none";
+    const supported = typeof CSS !== "undefined" &&
+      (CSS.supports("mask-image", mask) || CSS.supports("-webkit-mask-image", mask));
+    if (!supported) {
+      // No hard-edged fallback: do not animate behind the face on older engines.
+      atmosphere.style.visibility = "hidden";
+      return;
     }
+    atmosphere.style.maskImage = mask;
+    atmosphere.style.webkitMaskImage = mask;
+    atmosphere.style.maskRepeat = "no-repeat";
+    atmosphere.style.webkitMaskRepeat = "no-repeat";
     atmosphere.style.visibility = "visible";
   }
 
@@ -988,7 +1014,7 @@ class AirQualitySceneCard extends HTMLElement {
     root.innerHTML = `
       <style>${AirQualitySceneCard.styles}</style>
       <ha-card data-view="${this._config.view ?? "scene"}" style="--circle-size:${this._config.size ?? (this._config.view === "square" ? 160 : 140)}px">
-        <div class="scene" role="button" tabindex="0" aria-label="${this._t("aria.scene")}">
+        <div class="scene" data-interaction="${this._detailEnabled() ? "detail" : "none"}" role="${this._detailEnabled() ? "button" : "group"}" ${this._detailEnabled() ? 'tabindex="0"' : ""} aria-label="${this._interactionHint()}">
           <div class="sky"></div>
           <div class="state-atmosphere" aria-hidden="true">
             <svg class="state-breeze" viewBox="0 0 500 100" preserveAspectRatio="none">
@@ -1031,8 +1057,11 @@ class AirQualitySceneCard extends HTMLElement {
       <div class="tooltip" hidden></div>
     `;
     const scene = root.querySelector(".scene");
-    scene.addEventListener("click", () => this._openOverlay());
+    scene.addEventListener("click", () => {
+      if (this._detailEnabled()) this._openOverlay();
+    });
     scene.addEventListener("keydown", (ev) => {
+      if (!this._detailEnabled()) return;
       if (ev.target === root.querySelector(".chips") && ev.key === " ") return;
       if (ev.key === "Enter" || ev.key === " ") {
         ev.preventDefault();
@@ -1074,7 +1103,7 @@ class AirQualitySceneCard extends HTMLElement {
     const state = hass.states[this._config.entity];
     const scene = root.querySelector(".scene");
     const metric = this._metric();
-    scene.setAttribute("aria-label", this._t("aria.scene"));
+    scene.setAttribute("aria-label", this._interactionHint());
 
     // A name equal to the built-in default title (saved literally in the config
     // when the card was created) is shown in the current language.
@@ -1137,7 +1166,7 @@ class AirQualitySceneCard extends HTMLElement {
       this._scheduleSquareTextFit();
     }
     root.querySelector(".scene").setAttribute("aria-label",
-      `${this._mShort(metric)}: ${label}, ${numeric} ${metric.unit}. ${this._t("aria.scene")}`);
+      `${this._mShort(metric)}: ${label}, ${numeric} ${metric.unit}. ${this._interactionHint()}`);
   }
 
   /** Only recognised device labels drive the AQI colour. No numeric scale is assumed. */
@@ -1221,7 +1250,7 @@ class AirQualitySceneCard extends HTMLElement {
     footer.style.setProperty("--aqi-bg", appearance.sky[0]);
     footer.title = `${this._t("reading.aqi")}: ${appearance.label}`;
     root.querySelector(".aqi-summary-text").textContent = appearance.label;
-    scene.setAttribute("aria-label", `${name}. ${this._t("label.co2Level")}: ${label}, ${valid ? this._fmt(value, 0) : "–"} ${unit || "ppm"}. ${this._t("reading.aqi")}: ${appearance.label}. ${this._t("aria.scene")}`);
+    scene.setAttribute("aria-label", `${name}. ${this._t("label.co2Level")}: ${label}, ${valid ? this._fmt(value, 0) : "–"} ${unit || "ppm"}. ${this._t("reading.aqi")}: ${appearance.label}. ${this._interactionHint()}`);
   }
 
   /** Compact layout uses real entity units; it never guesses gas concentrations. */
@@ -1260,6 +1289,7 @@ class AirQualitySceneCard extends HTMLElement {
   /* ------------------------------------------------------------------ */
 
   async _openOverlay() {
+    if (!this._detailEnabled()) return;
     const overlay = this.shadowRoot.querySelector(".overlay");
     const previousSheet = overlay.querySelector(".sheet");
     if (previousSheet) previousSheet.scrollTop = 0;
@@ -1513,6 +1543,23 @@ class AirQualitySceneCard extends HTMLElement {
     return date.toLocaleTimeString(this._locale(), { hour: "numeric" });
   }
 
+  _chartLegend(metric) {
+    if (metric.categories.length < 2) {
+      return `<div class="chart-scale-note">${esc(this._t("chart.noThresholds"))}</div>`;
+    }
+    const digits = Math.max(metric.decimals ?? 0, 2);
+    const bands = metric.categories.map((cat, i) => {
+      const previous = i ? metric.categories[i - 1].max : null;
+      const range = Number.isFinite(cat.max)
+        ? (previous == null ? `≤ ${this._fmt(cat.max, digits)}`
+          : `> ${this._fmt(previous, digits)} – ${this._fmt(cat.max, digits)}`)
+        : `> ${this._fmt(previous, digits)}`;
+      return `<span class="chart-band"><i style="background:${cat.color}" aria-hidden="true"></i>${esc(this._catLabel(metric, cat))} · ${esc(range)} ${esc(metric.unit)}</span>`;
+    }).join("");
+    return `<div class="chart-scale">${bands}</div>${metric.attrKey === "device"
+      ? `<div class="chart-scale-note">${esc(this._t("chart.deviceSource"))}</div>` : ""}`;
+  }
+
   _render24hChart(el, stats, metric = this._metric()) {
     // 48 half-hour buckets from 5-minute statistics; hourly fallback.
     const now = Date.now();
@@ -1530,13 +1577,14 @@ class AirQualitySceneCard extends HTMLElement {
       b.length ? b.reduce((a, v) => a + v, 0) / b.length : null
     );
     if (!values.some((v) => v != null)) {
-      el.innerHTML = `<div class="empty">${this._t("chart.noHistory")}</div>`;
+      el.innerHTML = `<div class="empty">${this._t("chart.noHistory")}</div>${this._chartLegend(metric)}`;
       return;
     }
 
     const W = 520, H = 150, padL = 30, padB = 20, padT = 8;
     const plotW = W - padL - 6, plotH = H - padT - padB;
-    const maxV = Math.max(metric.chartFloor, ...values.filter((v) => v != null)) * 1.15;
+    const dataMax = Math.max(metric.chartFloor ?? 0, ...values.filter((v) => v != null));
+    const maxV = dataMax > 0 ? dataMax * 1.15 : (metric.decimals > 1 ? 0.001 : 1);
     const bw = plotW / 48;
     const y = (v) => padT + plotH - (v / maxV) * plotH;
 
@@ -1553,12 +1601,12 @@ class AirQualitySceneCard extends HTMLElement {
         data-tip="${v == null ? this._t("chart.noData") : `${this._fmt(v, metric.decimals)} ${metric.unit} · ${this._catLabel(metric, this._catForMetric(metric, v))}`.trim()} — ${this._hourLabel(when)}"/>`;
     });
 
-    const ticks = [0, Math.round(maxV / 2), Math.round(maxV)];
+    const ticks = [0, maxV / 2, maxV];
     const grid = ticks
       .map(
         (t) => `
         <line x1="${padL}" y1="${y(t)}" x2="${W - 6}" y2="${y(t)}" class="grid"/>
-        <text x="${padL - 5}" y="${y(t) + 3}" class="axis" text-anchor="end">${t}</text>`
+        <text x="${padL - 5}" y="${y(t) + 3}" class="axis" text-anchor="end">${this._fmt(t, Math.max(metric.decimals ?? 0, 2))}</text>`
       )
       .join("");
     let hourTicks = "";
@@ -1567,7 +1615,9 @@ class AirQualitySceneCard extends HTMLElement {
       hourTicks += `<text x="${padL + i * bw}" y="${H - 6}" class="axis">${this._hourLabel(when)}</text>`;
     }
 
-    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="chart">${grid}${bars}${hourTicks}${hits}</svg>`;
+    const thresholdLines = metric.categories.filter((cat) => Number.isFinite(cat.max) && cat.max > 0 && cat.max < maxV)
+      .map((cat) => `<line x1="${padL}" y1="${y(cat.max)}" x2="${W - 6}" y2="${y(cat.max)}" stroke="${cat.color}" stroke-width="1" stroke-dasharray="3 3" opacity=".35"/>`).join("");
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="chart">${grid}${thresholdLines}${bars}${hourTicks}${hits}</svg>${this._chartLegend(metric)}`;
     this._attachTooltips(el);
   }
 
@@ -1635,6 +1685,7 @@ class AirQualitySceneCard extends HTMLElement {
       position: relative; height: 190px; cursor: pointer; outline: none;
       display: flex; flex-direction: column; justify-content: space-between;
     }
+    .scene[data-interaction="none"] { cursor: default; }
     .scene:focus-visible { box-shadow: inset 0 0 0 2px var(--primary-color); }
     .sky { position: absolute; inset: 0;
       background: linear-gradient(var(--cat-sky-top, #dcf3dd), var(--cat-sky-bottom, #f2faf0)); }
@@ -1861,6 +1912,8 @@ class AirQualitySceneCard extends HTMLElement {
     ha-card:is([data-view="scene"], [data-view="square"]) .strip,
     ha-card:is([data-view="scene"], [data-view="square"]) .square-view { z-index: 2; }
 
+    .scene-face, .quality-face { background: transparent; }
+
     /* Circular alternative. The scene DOM and expanded detail are shared. */
     ha-card[data-view="circle"] {
       background: transparent; border: 0; box-shadow: none; overflow: visible;
@@ -1996,6 +2049,11 @@ class AirQualitySceneCard extends HTMLElement {
       border-top: 1px solid var(--divider-color, #e0e0e0); }
     .section .unit { font-weight: 400; font-size: .75rem; color: var(--secondary-text-color, #666); }
     .chart { width: 100%; height: auto; }
+    .chart-scale { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 4px; }
+    .chart-band { display: inline-flex; align-items: center; gap: 4px; font-size: .7rem;
+      color: var(--secondary-text-color, #666); }
+    .chart-band i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .chart-scale-note { font-size: .7rem; color: var(--secondary-text-color, #666); margin: 5px 0 0; }
     .grid { stroke: var(--divider-color, #e0e0e0); stroke-width: 1; }
     .axis { font-size: 9px; fill: var(--secondary-text-color, #666); }
     .empty { font-size: .85rem; color: var(--secondary-text-color, #666); padding: 12px 0; }
@@ -2058,6 +2116,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
       this._form = document.createElement("ha-form");
       this._form.computeLabel = (s) => {
         const fixed = {
+          tap_mode: this._t("ed.tapMode"),
           view: this._t("ed.view"),
           size: this._t("ed.size"),
           metric: this._t("ed.metric"),
@@ -2096,6 +2155,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
 
     this._form.hass = this._hass;
     this._form.data = {
+      tap_mode: cfg.tap_action?.action === "none" ? "none" : "detail",
       view: cfg.view ?? "scene",
       size: cfg.size ?? (cfg.view === "square" ? 160 : 140),
       metric,
@@ -2109,6 +2169,10 @@ class AirQualitySceneCardEditor extends HTMLElement {
     };
 
     const schema = [
+      { name: "tap_mode", selector: { select: { mode: "dropdown", options: [
+        { value: "detail", label: this._t("ed.tap.detail") },
+        { value: "none", label: this._t("ed.tap.none") },
+      ] } } },
       { name: "view", selector: { select: { mode: "dropdown", options: [
         { value: "scene", label: this._t("ed.view.scene") },
         { value: "circle", label: this._t("ed.view.circle") },
@@ -2216,6 +2280,7 @@ class AirQualitySceneCardEditor extends HTMLElement {
     const config = { type: "custom:air-quality-scene-card-dual", metric: v.metric, entity: v.entity };
     if (["circle", "square"].includes(v.view)) config.view = v.view;
     if (v.size != null) config.size = v.size;
+    if (v.tap_mode === "none") config.tap_action = { action: "none" };
     if (v.name) config.name = v.name;
     if (v.language && v.language !== "auto") config.language = v.language;
     if (v.standard && v.standard !== "epa") config.standard = v.standard;
